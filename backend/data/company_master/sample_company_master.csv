@@ -1,0 +1,5 @@
+company_name,cin,company_status,company_type,company_category,registered_address,email,phone,website,pan,gstin,listing_status,date_of_incorporation,last_agm_date,last_bs_date
+EASENEXT SOLUTIONS LLP,ACQ-8895,Inactive,LLP,Limited Liability Partnership,"C/o. Keval P. Senghani, Swastik Niwas, Mandvi Road, Gadhsisa, Kachchh, Gujarat 370445",N/A,N/A,N/A,N/A,N/A,Unlisted,8/28/2025,N/A,N/A
+JSW PAINTS LIMITED,U24299MH2019PLC321392,Active,Public,Company Limited by Shares,N/A,N/A,N/A,N/A,N/A,N/A,Unlisted,N/A,N/A,N/A
+OYSTER SALES PRIVATE LIMITED,U51909WB2010PTC152191,Active,Private,Company Limited by Shares,"Sample registered address, Kolkata, West Bengal",info@example.com,N/A,www.example.com,ABCDE1234F,24ABCDE1234F1Z5,Unlisted,1/1/2010,9/30/2025,3/31/2025
+RED AND WHITE INTERNATIONAL EDU PRIVATE LIMITED,U80901GJ2021PTC127720,Active,Private,Company Limited by Shares,"A-5, Saurashtra Society-2, Khodiyar Nagar, A.K. Road, Surat, Gujarat, India - 395008",[email protected],N/A,N/A,N/A,N/A,Unlisted,12/2/2021,9/30/2024,3/31/2024
