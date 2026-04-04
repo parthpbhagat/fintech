@@ -26,14 +26,7 @@ IBBI_PUBLIC_ANNOUNCEMENT_URL = "https://ibbi.gov.in/en/public-announcement"
 IBBI_CLAIMS_SEARCH_URL = "https://ibbi.gov.in/claims/claim-process"
 IBBI_CLAIMS_VERSION_URL = "https://ibbi.gov.in/claims/version-details"
 IBBI_CLAIMS_DETAIL_URL = "https://ibbi.gov.in/claims/frontClaimDetails"
-MCA_MASTER_DATA_URL = "https://www.mca.gov.in/content/mca/global/en/mca/master-data/MDS.html"
-GST_TAXPAYER_SEARCH_URL = "https://services.gst.gov.in/services/searchtp"
-UDYAM_SEARCH_URL = "https://udyamregistration.gov.in/Udyam_Verify.aspx"
-PUBLIC_COMPANY_PROFILE_BASE_URL = "https://www.instafinancials.com/company"
-FALCON_COMPANY_PROFILE_BASE_URL = "https://www.falconebiz.com"
-GOOGLE_NEWS_RSS_URL = "https://news.google.com/rss/search"
 BASE_DIR = Path(__file__).resolve().parent
-MASTER_DATA_DIR = BASE_DIR / "data" / "company_master"
 COMPANY_DETAIL_STORE_PATH = BASE_DIR / "data" / "company_details_store.json"
 CACHE_TTL_SECONDS = 5 * 60
 PROFILE_CACHE_TTL_SECONDS = 30 * 60
@@ -240,28 +233,19 @@ def is_probable_pdf_url(url: str) -> bool:
 
 def build_company_source_urls(company: dict[str, Any]) -> dict[str, str]:
     cin = clean_text(company.get("cin", ""))
-    gstin = clean_text(company.get("gstin", ""))
     registry_url = clean_text(company.get("registryUrl", ""))
-    profile_url = clean_text(company.get("profileUrl", ""))
     source_urls: dict[str, str] = {}
 
     if registry_url:
         source_urls["ibbiAnnouncement"] = registry_url
     source_urls["ibbiPublicAnnouncement"] = IBBI_PUBLIC_ANNOUNCEMENT_URL
     source_urls["ibbiClaims"] = build_claims_registry_url(cin) if cin and cin != "N/A" else IBBI_CLAIMS_SEARCH_URL
-    source_urls["mcaMasterData"] = MCA_MASTER_DATA_URL
-    source_urls["gstTaxpayerSearch"] = f"{GST_TAXPAYER_SEARCH_URL}?gstin={quote(gstin)}" if gstin and gstin != "N/A" else GST_TAXPAYER_SEARCH_URL
-    source_urls["udyamVerify"] = UDYAM_SEARCH_URL
-    if profile_url:
-        source_urls["publicProfileMirror"] = profile_url
     return source_urls
 
 
 def build_company_data_sources(company: dict[str, Any]) -> list[dict[str, str]]:
     urls = build_company_source_urls(company)
     sources: list[dict[str, str]] = []
-    source_section = normalize_source_section(company.get("sourceSection", ""))
-    status = normalize_company_status(company.get("status", "Active"), "Active")
     checked_at = utc_now_iso(timespec="minutes")
 
     sources.append(
@@ -285,85 +269,6 @@ def build_company_data_sources(company: dict[str, Any]) -> list[dict[str, str]]:
             "status": "connected",
             "url": urls["ibbiClaims"],
             "note": "Claims workflow and claim version pages.",
-            "checkedAt": checked_at,
-        }
-    )
-    sources.append(
-        {
-            "id": "mca_master_data",
-            "name": "MCA Master Data",
-            "portalType": "government",
-            "mode": "manual-assisted",
-            "status": "requires-captcha",
-            "url": urls["mcaMasterData"],
-            "note": "MCA endpoints are captcha-protected, so this app keeps this as assisted lookup.",
-            "checkedAt": checked_at,
-        }
-    )
-    sources.append(
-        {
-            "id": "gst_taxpayer_search",
-            "name": "GST Taxpayer Search",
-            "portalType": "government",
-            "mode": "manual-assisted",
-            "status": "available",
-            "url": urls["gstTaxpayerSearch"],
-            "note": "GST profile can be verified directly from the GST portal.",
-            "checkedAt": checked_at,
-        }
-    )
-    sources.append(
-        {
-            "id": "udyam_verify",
-            "name": "Udyam Verify",
-            "portalType": "government",
-            "mode": "manual-assisted",
-            "status": "available",
-            "url": urls["udyamVerify"],
-            "note": "Useful for MSME/Udyam verification where available.",
-            "checkedAt": checked_at,
-        }
-    )
-
-    profile_url = clean_text(company.get("profileUrl", ""))
-    if profile_url:
-        sources.append(
-            {
-                "id": "public_profile_mirror",
-                "name": "Public Company Profile Mirror",
-                "portalType": "public-registry-mirror",
-                "mode": "live-scrape",
-                "status": "connected",
-                "url": profile_url,
-                "note": "Supplementary enrichment for directors, charges, and contact fields.",
-                "checkedAt": checked_at,
-            }
-        )
-
-    if source_section == "master":
-        sources.append(
-            {
-                "id": "local_company_master",
-                "name": "Local Company Master",
-                "portalType": "internal-dataset",
-                "mode": "batch-load",
-                "status": "connected",
-                "url": "",
-                "note": "Seed dataset loaded from backend/data/company_master.",
-                "checkedAt": checked_at,
-            }
-        )
-
-    type_note = normalize_company_type(company.get("type", ""), fallback_name=company.get("name", ""))
-    sources.append(
-        {
-            "id": "company_type_classifier",
-            "name": "Type Classification",
-            "portalType": "internal-rule",
-            "mode": "derived",
-            "status": "connected",
-            "url": "",
-            "note": f"Company categorized as {type_note} (supports Private, Public, LLP, OPC).",
             "checkedAt": checked_at,
         }
     )
@@ -394,8 +299,8 @@ def attach_company_source_metadata(company: dict[str, Any]) -> dict[str, Any]:
     enriched["registeredAddress"] = sanitize_public_value(enriched.get("registeredAddress", "N/A"))
     if is_missing_value(enriched.get("businessAddress")):
         enriched["businessAddress"] = enriched["registeredAddress"]
-    if (not enriched.get("addresses")) and enriched["registeredAddress"] != "N/A":
-        enriched["addresses"] = parse_public_address(enriched["registeredAddress"])
+    if not enriched.get("addresses"):
+        enriched["addresses"] = []
 
     enriched["sourceUrls"] = build_company_source_urls(enriched)
     enriched["dataSources"] = build_company_data_sources(enriched)
@@ -810,628 +715,12 @@ def build_claims_company_from_search_row(row: dict[str, str]) -> dict[str, Any]:
     }
 
 
-def build_master_company(row: dict[str, Any]) -> dict[str, Any] | None:
-    name = find_first_value(
-        row,
-        "company name",
-        "company_name",
-        "name",
-        "llp name",
-        "entity name",
-        "legal name",
-    )
-    if not name:
-        return None
 
-    cin = find_first_value(row, "cin", "cin no", "cin number", "company cin", "llpin", "llp identification number")
-    status = find_first_value(row, "company status", "status", "llp status") or "Active"
-    company_type = find_first_value(row, "company type", "entity type", "class", "company class")
-    company_type = normalize_company_type(company_type, fallback_name=name)
 
-    category = find_first_value(row, "company category", "category", "sub category", "company subtype") or "Company Master"
-    company_subcategory = find_first_value(row, "company subcategory", "sub category", "company subtype", "llp subtype")
-    registered_address = find_first_value(
-        row,
-        "registered address",
-        "registered office address",
-        "address",
-        "company address",
-        "registered office",
-    ) or "N/A"
-    listing_status = find_first_value(row, "listing status", "listed", "listed status")
-    listing_status = "Listed" if listing_status.lower() in {"listed", "yes", "y", "true"} else "Unlisted"
 
-    company_id = cin or slugify(name)
-    incorporation_date = find_first_value(row, "date of incorporation", "incorporation date", "date of inc", "inc date") or "N/A"
-    roc_code = find_first_value(row, "roc", "roc code", "registrar of companies", "roc/region")
-    if not roc_code:
-        roc_code = derive_roc_code(cin or company_id, registered_address)
 
-    registration_number = find_first_value(row, "registration number", "registration no", "reg no", "company registration number")
-    if not registration_number and cin and cin != "N/A":
-        registration_number = cin[-6:] if len(cin) >= 6 else cin
 
-    auth_cap = parse_money_amount(find_first_value(row, "authorised capital", "authorized capital", "auth cap", "authcapital"))
-    paid_up = parse_money_amount(find_first_value(row, "paid up capital", "paid-up capital", "puc", "paidupcapital"))
-    industry = find_first_value(row, "industry", "main business", "business activity", "activity")
-    nic_code = find_first_value(row, "nic", "nic code", "niccode")
-    filing_status = find_first_value(row, "filing status", "compliance status")
-    active_compliance = find_first_value(row, "active compliance", "active compliant", "compliant")
-    addresses = parse_public_address(registered_address)
-    last_updated = find_first_value(row, "last updated", "updated on", "last update date") or incorporation_date
 
-    return {
-        "id": company_id,
-        "name": name,
-        "cin": cin or "N/A",
-        "pan": find_first_value(row, "pan", "pan number") or "N/A",
-        "incorporationDate": incorporation_date,
-        "status": status if status in {"Active", "Inactive", "Under CIRP", "Liquidation", "Dissolved"} else "Active",
-        "type": normalize_company_type(company_type, fallback_name=name),
-        "category": category,
-        "origin": find_first_value(row, "origin", "country of origin", "jurisdiction") or "Indian",
-        "registeredAddress": registered_address,
-        "businessAddress": find_first_value(row, "business address", "address for correspondence", "corporate address") or registered_address,
-        "phone": find_first_value(row, "phone", "mobile", "contact number", "telephone") or "N/A",
-        "email": find_first_value(row, "email", "email id", "company email") or "N/A",
-        "website": find_first_value(row, "website", "web site", "url") or "N/A",
-        "listingStatus": listing_status,
-        "lastAGMDate": find_first_value(row, "last agm date", "date of agm", "agm date") or "N/A",
-        "lastBSDate": find_first_value(row, "last bs date", "balance sheet date", "last balance sheet date") or "N/A",
-        "gstin": find_first_value(row, "gstin", "gst number") or "N/A",
-        "lei": find_first_value(row, "lei") or "N/A",
-        "epfo": find_first_value(row, "epfo") or "N/A",
-        "iec": find_first_value(row, "iec", "import export code") or "N/A",
-        "authCap": auth_cap,
-        "puc": paid_up,
-        "soc": 0,
-        "revenue": [],
-        "pat": [],
-        "netWorth": [],
-        "promoterHolding": [],
-        "receivable": "N/A",
-        "payable": "N/A",
-        "overview": f"{name} is available in the local company master dataset. No IBBI insolvency event is currently mapped for this company.",
-        "charges": [],
-        "financials": [],
-        "ownership": [],
-        "compliance": [],
-        "documents": [],
-        "directors": [],
-        "news": [],
-        "trendData": [],
-        "applicant_name": "N/A",
-        "ip_name": "N/A",
-        "commencement_date": "N/A",
-        "last_date_claims": "N/A",
-        "announcementType": "No active IBBI event matched",
-        "announcementDate": "N/A",
-        "announcementDateIso": "",
-        "lastDateOfSubmission": "N/A",
-        "lastDateOfSubmissionIso": "",
-        "insolvencyProfessionalAddress": "N/A",
-        "remarks": "Source: local company master dataset.",
-        "registryUrl": "",
-        "announcementCount": 0,
-        "applicants": [],
-        "insolvencyProfessionals": [],
-        "announcementHistory": [],
-        "sourceSection": "master",
-        "sourceUrls": {},
-        "dataSources": [],
-        "rocCode": roc_code or "N/A",
-        "registrationNumber": registration_number or "N/A",
-        "companySubcategory": company_subcategory or "N/A",
-        "nicCode": nic_code or "N/A",
-        "industry": industry or "N/A",
-        "filingStatus": filing_status or "N/A",
-        "activeCompliance": active_compliance or "N/A",
-        "lastUpdatedOn": normalize_display_date(last_updated),
-        "addresses": addresses,
-    }
-
-
-def parse_money_amount(value: str) -> float:
-    cleaned = clean_text(value).replace("₹", "").replace(",", "").replace("(", "").replace(")", "")
-    if not cleaned or cleaned.upper() == "NA":
-        return 0
-    match = re.search(r"-?\d+(?:\.\d+)?", cleaned)
-    return float(match.group(0)) if match else 0
-
-
-def build_public_profile_url(name: str, cin: str) -> str:
-    return f"{PUBLIC_COMPANY_PROFILE_BASE_URL}/{slugify(name)}-{clean_text(cin)}"
-
-
-def parse_public_address(raw_address: str) -> list[dict[str, str]]:
-    cleaned_raw = sanitize_public_value(raw_address)
-    if cleaned_raw == "N/A":
-        return []
-
-    normalized_raw = re.sub(r"\.\s*Region\s*:\s*.*$", "", cleaned_raw, flags=re.I)
-    parts = [clean_text(part) for part in re.split(r"[;,]", normalized_raw) if clean_text(part)]
-    city = district = state = postal_code = ""
-    country = "India" if "india" in normalized_raw.lower() or re.search(r"\bIN\b", normalized_raw) else ""
-
-    postal_index = next((index for index, part in enumerate(parts) if re.search(r"\b\d{6}\b", part)), -1)
-    country_index = next((index for index, part in enumerate(parts) if part.lower() in {"india", "in"}), -1)
-    state_index = -1
-    if country_index > 0:
-        state_index = country_index - 1
-    elif postal_index > 0:
-        state_index = postal_index - 1
-    if postal_index >= 0:
-        postal_match = re.search(r"\b(\d{6})\b", parts[postal_index])
-        postal_code = clean_text(postal_match.group(1)) if postal_match else ""
-        if parts[postal_index] == postal_code:
-            parts.pop(postal_index)
-            if country_index > postal_index:
-                country_index -= 1
-            if state_index > postal_index:
-                state_index -= 1
-    if state_index >= 0 and state_index < len(parts):
-        state = parts[state_index]
-    city_index = state_index - 1 if state_index > 0 else -1
-    district_index = city_index - 1 if city_index > 0 else -1
-    if city_index >= 0 and city_index < len(parts):
-        city = parts[city_index]
-    if district_index >= 0 and district_index < len(parts):
-        district = parts[district_index]
-
-    line_cutoff = district_index if district_index > 0 else city_index if city_index > 0 else min(len(parts), 4)
-    if line_cutoff <= 0:
-        line_cutoff = min(len(parts), 4)
-    line_parts = parts[:line_cutoff]
-
-    return [
-        {
-            "type": "Registered Address",
-            "line1": line_parts[0] if len(line_parts) > 0 else "",
-            "line2": line_parts[1] if len(line_parts) > 1 else "",
-            "line3": line_parts[2] if len(line_parts) > 2 else "",
-            "line4": line_parts[3] if len(line_parts) > 3 else "",
-            "locality": "",
-            "district": district,
-            "city": city or (parts[-1] if parts else ""),
-            "state": state,
-            "postalCode": postal_code,
-            "country": country or "India",
-            "raw": cleaned_raw,
-        }
-    ]
-
-
-def extract_table_pairs(table: Any) -> dict[str, str]:
-    pairs: dict[str, str] = {}
-    if table is None:
-        return pairs
-
-    for row in table.select("tr"):
-        cells = row.find_all("td")
-        if len(cells) < 2:
-            continue
-        if len(cells) == 4:
-            pairs[clean_text(cells[0].get_text(" ", strip=True))] = clean_text(cells[1].get_text(" ", strip=True))
-            pairs[clean_text(cells[2].get_text(" ", strip=True))] = clean_text(cells[3].get_text(" ", strip=True))
-        elif len(cells) >= 2:
-            pairs[clean_text(cells[0].get_text(" ", strip=True))] = clean_text(cells[1].get_text(" ", strip=True))
-    return pairs
-
-
-def extract_compact_pairs(table: Any) -> dict[str, str]:
-    pairs: dict[str, str] = {}
-    if table is None:
-        return pairs
-
-    known_prefixes = [
-        "Authorized Capital",
-        "Authorised Capital",
-        "Paid-up Capital",
-        "Paid-up capital",
-        "Company Status",
-        "Total Directors",
-        "Total Partners",
-        "AGM",
-        "Balance Sheet",
-    ]
-    for row in table.select("tr"):
-        text = clean_text(row.get_text(" ", strip=True))
-        for prefix in known_prefixes:
-            if text.lower().startswith(prefix.lower()):
-                pairs[prefix] = clean_text(text[len(prefix) :])
-                break
-    return pairs
-
-
-def build_falcon_profile_url(name: str, cin: str, company_type: str) -> str:
-    entity_path = "LLP" if company_type == "LLP" or "-" in clean_text(cin) else "company"
-    return f"{FALCON_COMPANY_PROFILE_BASE_URL}/{entity_path}/{slugify(name).upper()}-{clean_text(cin)}"
-
-
-def scrape_falcon_directors(table: Any) -> list[dict[str, Any]]:
-    directors: list[dict[str, Any]] = []
-    if table is None:
-        return directors
-
-    for row in table.select("tr"):
-        cells = row.find_all("td")
-        if len(cells) < 4:
-            continue
-        directors.append(
-            {
-                "din": clean_text(cells[0].get_text(" ", strip=True)),
-                "name": clean_text(cells[1].get_text(" ", strip=True)),
-                "designation": clean_text(cells[2].get_text(" ", strip=True)),
-                "appointmentDate": normalize_display_date(cells[3].get_text(" ", strip=True)),
-                "status": "Active",
-                "totalDirectorships": "",
-                "disqualified164": "",
-                "dinDeactivated": "",
-                "profileUrl": "",
-                "contactEmail": "",
-                "contactPhone": "",
-                "contactWebsite": "",
-                "contactAddress": "",
-                "contactSource": "",
-                "contactNote": "",
-            }
-        )
-    return directors
-
-
-def scrape_public_director_profile(session: requests.Session, profile_url: str) -> dict[str, str]:
-    normalized_profile_url = clean_text(profile_url)
-    if not normalized_profile_url:
-        return {}
-
-    response = session.get(normalized_profile_url, timeout=REQUEST_TIMEOUT_SECONDS)
-    response.raise_for_status()
-    soup = BeautifulSoup(response.text, "html.parser")
-
-    merged_pairs: dict[str, str] = {}
-    for table in soup.select("table"):
-        merged_pairs.update(extract_table_pairs(table))
-    for compact_table in soup.select("table.table-sm"):
-        merged_pairs.update(extract_compact_pairs(compact_table))
-
-    email = sanitize_public_value(
-        merged_pairs.get("Business Email")
-        or merged_pairs.get("Email")
-        or merged_pairs.get("Email ID")
-        or merged_pairs.get("E-mail")
-        or "N/A"
-    )
-    phone = sanitize_public_value(
-        merged_pairs.get("Business Phone")
-        or merged_pairs.get("Contact Number")
-        or merged_pairs.get("Phone")
-        or merged_pairs.get("Telephone")
-        or "N/A"
-    )
-    website = sanitize_public_value(merged_pairs.get("Website") or merged_pairs.get("Company Website") or "N/A")
-
-    return {
-        "profileUrl": normalized_profile_url,
-        "contactEmail": email,
-        "contactPhone": phone,
-        "contactWebsite": website,
-        "nationality": sanitize_public_value(merged_pairs.get("Nationality", "N/A")),
-        "occupation": sanitize_public_value(merged_pairs.get("Occupation", "N/A")),
-        "contactSource": "Public director profile",
-    }
-
-
-def scrape_falcon_company_profile(session: requests.Session, company: dict[str, Any]) -> dict[str, Any] | None:
-    cin = clean_text(company.get("cin", ""))
-    if not cin or cin == "N/A":
-        return None
-
-    profile_url = build_falcon_profile_url(company["name"], cin, company.get("type", ""))
-    response = session.get(profile_url, timeout=REQUEST_TIMEOUT_SECONDS)
-    response.raise_for_status()
-    if "404" in response.text and "falconebiz" not in response.text.lower():
-        return None
-
-    soup = BeautifulSoup(response.text, "html.parser")
-    tables = soup.find_all("table")
-    if not tables:
-        return None
-
-    core_pairs = extract_table_pairs(tables[0]) if len(tables) > 0 else {}
-    tax_pairs: dict[str, str] = {}
-    contact_pairs: dict[str, str] = {}
-    for table in tables[1:]:
-        pairs = extract_table_pairs(table)
-        if not pairs:
-            continue
-        if not tax_pairs and any(key in pairs for key in {"GST Number", "PAN", "Nature", "Registration Date", "State"}):
-            tax_pairs = pairs
-        if not contact_pairs and any(key in pairs for key in {"Email", "Address", "Website", "Contact Number"}):
-            contact_pairs = pairs
-    directors_table = next((table for table in tables if "m-table" in (table.get("class") or [])), None)
-    compact_table = next((table for table in tables if "table-sm" in (table.get("class") or [])), None)
-    compact_pairs = extract_compact_pairs(compact_table)
-
-    if not core_pairs and not contact_pairs and not compact_pairs:
-        return None
-
-    registered_address = sanitize_public_value(contact_pairs.get("Address", company.get("registeredAddress", "N/A")))
-    email = sanitize_public_value(contact_pairs.get("Email", company.get("email", "N/A")))
-    website = sanitize_public_value(contact_pairs.get("Website", company.get("website", "N/A")))
-    phone = sanitize_public_value(contact_pairs.get("Contact Number", company.get("phone", "N/A")))
-    directors = scrape_falcon_directors(directors_table)
-
-    falcon_company = dict(company)
-    falcon_company.update(
-        {
-            "profileUrl": company.get("profileUrl") or profile_url,
-            "status": normalize_company_status(core_pairs.get("Company Status", compact_pairs.get("Company Status", company.get("status", "Active"))), company.get("status", "Active")),
-            "incorporationDate": normalize_display_date(core_pairs.get("Date of Incorporation", company.get("incorporationDate", "N/A"))),
-            "rocCode": sanitize_public_value(core_pairs.get("RoC", company.get("rocCode", "N/A"))),
-            "registrationNumber": sanitize_public_value(core_pairs.get("Registration Number", company.get("registrationNumber", "N/A"))),
-            "authCap": parse_money_amount(core_pairs.get("Authorized Capital", compact_pairs.get("Authorized Capital", compact_pairs.get("Authorised Capital", "")))) or company.get("authCap", 0),
-            "puc": parse_money_amount(core_pairs.get("Paid-up capital", compact_pairs.get("Paid-up capital", compact_pairs.get("Paid-up Capital", "")))) or company.get("puc", 0),
-            "industry": sanitize_public_value(core_pairs.get("Activity", tax_pairs.get("Nature", company.get("industry", "N/A")))),
-            "registeredAddress": registered_address,
-            "businessAddress": registered_address if registered_address != "N/A" else company.get("businessAddress", "N/A"),
-            "addresses": parse_public_address(registered_address),
-            "email": email,
-            "website": website,
-            "phone": phone,
-            "gstin": sanitize_public_value(tax_pairs.get("GST Number", company.get("gstin", "N/A"))),
-            "pan": sanitize_public_value(tax_pairs.get("PAN", company.get("pan", "N/A"))),
-            "lastAGMDate": normalize_display_date(compact_pairs.get("AGM", company.get("lastAGMDate", "N/A"))),
-            "lastBSDate": normalize_display_date(core_pairs.get("Date of Latest Balance Sheet", compact_pairs.get("Balance Sheet", company.get("lastBSDate", "N/A")))),
-            "directors": directors,
-            "remarks": f"{company.get('remarks', '')} FalconEbiz profile fields enriched.".strip(),
-        }
-    )
-    return falcon_company
-
-
-def merge_company_enrichment(base_company: dict[str, Any], update: dict[str, Any] | None) -> dict[str, Any]:
-    if not update:
-        return base_company
-
-    merged = dict(base_company)
-    override_fields = {
-        "status",
-        "type",
-        "incorporationDate",
-        "rocCode",
-        "registrationNumber",
-        "authCap",
-        "puc",
-        "lastAGMDate",
-        "lastBSDate",
-        "industry",
-        "registeredAddress",
-        "businessAddress",
-        "profileUrl",
-        "phone",
-        "email",
-        "website",
-        "pan",
-        "gstin",
-    }
-    list_fields = {"addresses", "directors", "charges"}
-
-    for field, value in update.items():
-        if field in list_fields:
-            if not is_missing_value(value):
-                merged[field] = value
-            continue
-        if field in override_fields:
-            if field in {"email", "pan", "gstin"} and is_masked_public_value(value) and not is_missing_value(merged.get(field)):
-                continue
-            if not is_missing_value(value):
-                merged[field] = value
-            continue
-        if is_missing_value(merged.get(field)) and not is_missing_value(value):
-            merged[field] = value
-
-    return merged
-
-
-def attach_director_contact_details(session: requests.Session, company: dict[str, Any]) -> list[dict[str, Any]]:
-    directors = company.get("directors") or []
-    if not directors:
-        return []
-
-    company_email = sanitize_public_value(company.get("email", "N/A"))
-    company_phone = sanitize_public_value(company.get("phone", "N/A"))
-    company_website = sanitize_public_value(company.get("website", "N/A"))
-    company_address = sanitize_public_value(company.get("registeredAddress", "N/A"))
-    company_contact_available = any(value != "N/A" for value in [company_email, company_phone, company_website, company_address])
-
-    enriched_directors: list[dict[str, Any]] = []
-    for director in directors:
-        enriched_director = dict(director)
-        profile_url = clean_text(enriched_director.get("profileUrl", ""))
-
-        if profile_url:
-            try:
-                director_profile = scrape_public_director_profile(session, profile_url)
-                for field, value in director_profile.items():
-                    if is_missing_value(enriched_director.get(field)) and not is_missing_value(value):
-                        enriched_director[field] = value
-            except Exception:
-                pass
-
-        if is_missing_value(enriched_director.get("contactEmail")) and company_email != "N/A":
-            enriched_director["contactEmail"] = company_email
-        if is_missing_value(enriched_director.get("contactPhone")) and company_phone != "N/A":
-            enriched_director["contactPhone"] = company_phone
-        if is_missing_value(enriched_director.get("contactWebsite")) and company_website != "N/A":
-            enriched_director["contactWebsite"] = company_website
-        if is_missing_value(enriched_director.get("contactAddress")) and company_address != "N/A":
-            enriched_director["contactAddress"] = company_address
-
-        if is_missing_value(enriched_director.get("contactSource")):
-            enriched_director["contactSource"] = "Company public contact route" if company_contact_available else "No public contact route"
-
-        if is_missing_value(enriched_director.get("contactNote")):
-            enriched_director["contactNote"] = (
-                "Direct personal contact was not published in the current public sources. Use the company's public contact channels."
-                if company_contact_available
-                else "No public director or company contact route was published in the current sources."
-            )
-
-        enriched_directors.append(enriched_director)
-
-    return enriched_directors
-
-
-def attach_company_freshness(company: dict[str, Any], *, snapshot_synced_at: str, profile_cached_at: str) -> dict[str, Any]:
-    enriched = dict(company)
-    enriched["snapshotSyncedAt"] = snapshot_synced_at or "N/A"
-    enriched["profileCachedAt"] = profile_cached_at or "N/A"
-    enriched["profileCacheTtlSeconds"] = PROFILE_CACHE_TTL_SECONDS
-    return enriched
-
-
-def derive_search_terms(company_name: str) -> list[str]:
-    cleaned_name = clean_text(company_name)
-    terms = [cleaned_name]
-    simplified = re.sub(
-        r"\b(PRIVATE LIMITED|LIMITED LIABILITY PARTNERSHIP|LLP|LIMITED|PRIVATE|PVT\.?\s*LTD\.?)\b",
-        "",
-        cleaned_name,
-        flags=re.I,
-    )
-    simplified = clean_text(simplified)
-    if simplified and simplified.upper() != cleaned_name.upper():
-        terms.append(simplified)
-    return list(dict.fromkeys(term for term in terms if term))
-
-
-def fetch_google_news(session: requests.Session, company: dict[str, Any], limit: int = 5) -> list[dict[str, str]]:
-    items: list[dict[str, str]] = []
-    seen_keys: set[str] = set()
-
-    for term in derive_search_terms(company["name"]):
-        response = session.get(
-            GOOGLE_NEWS_RSS_URL,
-            params={"q": f'"{term}" when:365d', "hl": "en-IN", "gl": "IN", "ceid": "IN:en"},
-            timeout=REQUEST_TIMEOUT_SECONDS,
-        )
-        response.raise_for_status()
-        feed = BeautifulSoup(response.text, "xml")
-        for item in feed.find_all("item"):
-            title = clean_text(item.title.get_text(" ", strip=True) if item.title else "")
-            link = clean_text(item.link.get_text(" ", strip=True) if item.link else "")
-            source = clean_text(item.source.get_text(" ", strip=True) if item.source else "Google News")
-            pub_date = normalize_display_date(item.pubDate.get_text(" ", strip=True) if item.pubDate else "")
-            if not title:
-                continue
-            key = f"{title.lower()}|{source.lower()}"
-            if key in seen_keys:
-                continue
-            seen_keys.add(key)
-            items.append(
-                build_news_item(
-                    company["id"],
-                    title,
-                    source,
-                    pub_date,
-                    f"Latest public news mention for {company['name']} surfaced via Google News RSS.",
-                    link,
-                )
-            )
-            if len(items) >= limit:
-                return items
-    return items
-
-
-def build_registry_updates(company: dict[str, Any]) -> list[dict[str, str]]:
-    updates: list[dict[str, str]] = []
-    if not is_missing_value(company.get("lastUpdatedOn")):
-        updates.append(
-            build_news_item(
-                company["id"],
-                f"{company['name']} registry profile refreshed",
-                "Company Registry",
-                company["lastUpdatedOn"],
-                f"Public registry profile for {company['name']} shows its latest refresh on {company['lastUpdatedOn']}.",
-                company.get("profileUrl", ""),
-            )
-        )
-    if not is_missing_value(company.get("incorporationDate")):
-        updates.append(
-            build_news_item(
-                company["id"],
-                f"{company['name']} incorporation record",
-                "Company Registry",
-                company["incorporationDate"],
-                f"{company['name']} was incorporated on {company['incorporationDate']}.",
-                company.get("profileUrl", ""),
-            )
-        )
-    if not is_missing_value(company.get("lastAGMDate")):
-        updates.append(
-            build_news_item(
-                company["id"],
-                f"{company['name']} AGM filing recorded",
-                "Company Registry",
-                company["lastAGMDate"],
-                f"Latest AGM date available for {company['name']} is {company['lastAGMDate']}.",
-                company.get("profileUrl", ""),
-            )
-        )
-    if not is_missing_value(company.get("lastBSDate")):
-        updates.append(
-            build_news_item(
-                company["id"],
-                f"{company['name']} balance sheet update",
-                "Company Registry",
-                company["lastBSDate"],
-                f"Latest balance sheet date available for {company['name']} is {company['lastBSDate']}.",
-                company.get("profileUrl", ""),
-            )
-        )
-    for director in (company.get("directors") or [])[:3]:
-        if is_missing_value(director.get("appointmentDate")):
-            continue
-        updates.append(
-            build_news_item(
-                company["id"],
-                f"{director['name']} associated with {company['name']}",
-                "Company Registry",
-                director["appointmentDate"],
-                f"{director['name']} is listed as {director['designation']} from {director['appointmentDate']}.",
-                director.get("profileUrl", "") or company.get("profileUrl", ""),
-            )
-        )
-    for announcement in (company.get("announcementHistory") or [])[:3]:
-        updates.append(
-            build_news_item(
-                company["id"],
-                f"{announcement['announcementType']} for {company['name']}",
-                "IBBI",
-                announcement["announcementDate"],
-                announcement["remarks"],
-                announcement["registryUrl"],
-            )
-        )
-    return updates
-
-
-def build_company_news(session: requests.Session, company: dict[str, Any]) -> list[dict[str, str]]:
-    try:
-        external_news = fetch_google_news(session, company, limit=5)
-    except Exception:
-        external_news = []
-
-    combined = external_news + build_registry_updates(company)
-    deduped: dict[str, dict[str, str]] = {}
-    for item in combined:
-        key = f"{clean_text(item['title']).lower()}|{clean_text(item['date']).lower()}"
-        deduped.setdefault(key, item)
-    return sorted(
-        deduped.values(),
-        key=lambda item: (parse_date(item["date"]), clean_text(item["title"]).upper()),
-        reverse=True,
-    )[:8]
 
 
 def build_company_documents(company: dict[str, Any]) -> list[dict[str, Any]]:
@@ -1460,46 +749,6 @@ def build_company_documents(company: dict[str, Any]) -> list[dict[str, Any]]:
         },
     ]
 
-    profile_url = clean_text(company.get("profileUrl", ""))
-    if profile_url:
-        documents.append(
-            {
-                "formId": "PUBLIC_PROFILE",
-                "fileName": "public-company-profile.html",
-                "year": current_year,
-                "dateOfFiling": normalize_display_date(company.get("lastUpdatedOn") or company.get("incorporationDate") or "N/A"),
-                "category": "Public Profile Source",
-                "source": "Public Source",
-                "url": profile_url,
-                "downloadUrl": profile_url,
-            }
-        )
-        if "instafinancials.com/company/" in profile_url:
-            documents.append(
-                {
-                    "formId": "DIRECTORS_SOURCE",
-                    "fileName": "directors-listing.html",
-                    "year": current_year,
-                    "dateOfFiling": normalize_display_date(company.get("lastUpdatedOn") or "N/A"),
-                    "category": "Directors Source",
-                    "source": "InstaFinancials",
-                    "url": f"{profile_url}/company-directors",
-                    "downloadUrl": f"{profile_url}/company-directors",
-                }
-            )
-            documents.append(
-                {
-                    "formId": "CHARGES_SOURCE",
-                    "fileName": "charges-listing.html",
-                    "year": current_year,
-                    "dateOfFiling": normalize_display_date(company.get("lastUpdatedOn") or "N/A"),
-                    "category": "Charges Source",
-                    "source": "InstaFinancials",
-                    "url": f"{profile_url}/company-charges",
-                    "downloadUrl": f"{profile_url}/company-charges",
-                }
-            )
-
     if company.get("registryUrl"):
         documents.append(
             {
@@ -1514,35 +763,12 @@ def build_company_documents(company: dict[str, Any]) -> list[dict[str, Any]]:
             }
         )
 
-    source_urls = company.get("sourceUrls") or {}
-    for source_key, source_url in source_urls.items():
-        clean_source_url = clean_text(source_url)
-        if not clean_source_url:
-            continue
-        documents.append(
-            {
-                "formId": f"SOURCE_{slugify(source_key)}",
-                "fileName": f"{slugify(source_key)}.html",
-                "year": current_year,
-                "dateOfFiling": normalize_display_date(company.get("announcementDate") or company.get("lastUpdatedOn") or "N/A"),
-                "category": "Government / Source Portal",
-                "source": source_key,
-                "url": clean_source_url,
-                "downloadUrl": clean_source_url,
-            }
-        )
-
     discovered_pdf_urls: set[str] = set()
     for announcement in company.get("announcementHistory") or []:
         for url in [announcement.get("registryUrl", ""), announcement.get("remarks", "")]:
             for extracted_url in extract_urls(url):
                 if is_probable_pdf_url(extracted_url):
                     discovered_pdf_urls.add(extracted_url)
-
-    for item in company.get("news") or []:
-        for extracted_url in extract_urls(item.get("url", "")):
-            if is_probable_pdf_url(extracted_url):
-                discovered_pdf_urls.add(extracted_url)
 
     for pdf_index, pdf_url in enumerate(sorted(discovered_pdf_urls), start=1):
         documents.append(
@@ -1552,7 +778,7 @@ def build_company_documents(company: dict[str, Any]) -> list[dict[str, Any]]:
                 "year": current_year,
                 "dateOfFiling": normalize_display_date(company.get("announcementDate") or company.get("lastUpdatedOn") or "N/A"),
                 "category": "Source PDF",
-                "source": "Discovered from source links",
+                "source": "IBBI Public Announcement",
                 "url": pdf_url,
                 "downloadUrl": pdf_url,
             }
@@ -1604,234 +830,14 @@ def build_company_summary_text(company: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def scrape_public_directors(session: requests.Session, profile_url: str) -> list[dict[str, Any]]:
-    response = session.get(f"{profile_url}/company-directors", timeout=REQUEST_TIMEOUT_SECONDS)
-    response.raise_for_status()
-    soup = BeautifulSoup(response.text, "html.parser")
-    directors: list[dict[str, Any]] = []
-
-    section_map = {
-        "directorContentHolder_currentDirectorsContainer": "Active",
-        "directorContentHolder_pastDirectorsContainer": "Resigned",
-    }
-    for container_id, director_status in section_map.items():
-        container = soup.find(id=container_id)
-        if not container:
-            continue
-        table = container.find("table")
-        if not table:
-            continue
-        for row in table.select("tbody tr"):
-            cells = row.find_all("td")
-            if len(cells) < 7:
-                continue
-            name_link = cells[0].find("a")
-            din_link = cells[1].find("a")
-            directors.append(
-                {
-                    "din": clean_text(din_link.get_text(" ", strip=True) if din_link else cells[1].get_text(" ", strip=True)),
-                    "name": clean_text(name_link.get_text(" ", strip=True) if name_link else cells[0].get_text(" ", strip=True)),
-                    "designation": clean_text(cells[2].get_text(" ", strip=True)),
-                    "appointmentDate": clean_text(cells[3].get_text(" ", strip=True)),
-                    "status": director_status,
-                    "totalDirectorships": clean_text(cells[4].get_text(" ", strip=True)),
-                    "disqualified164": clean_text(cells[5].get_text(" ", strip=True)),
-                    "dinDeactivated": clean_text(cells[6].get_text(" ", strip=True)),
-                    "profileUrl": urljoin(f"{profile_url}/", name_link["href"]) if name_link and name_link.has_attr("href") else "",
-                    "contactEmail": "",
-                    "contactPhone": "",
-                    "contactWebsite": "",
-                    "contactAddress": "",
-                    "contactSource": "",
-                    "contactNote": "",
-                }
-            )
-    return directors
+def attach_company_freshness(company: dict[str, Any], *, snapshot_synced_at: str, profile_cached_at: str) -> dict[str, Any]:
+    enriched = dict(company)
+    enriched["snapshotSyncedAt"] = snapshot_synced_at or "N/A"
+    enriched["profileCachedAt"] = profile_cached_at or "N/A"
+    enriched["profileCacheTtlSeconds"] = PROFILE_CACHE_TTL_SECONDS
+    return enriched
 
 
-def scrape_public_charges(session: requests.Session, profile_url: str) -> list[dict[str, Any]]:
-    response = session.get(f"{profile_url}/company-charges", timeout=REQUEST_TIMEOUT_SECONDS)
-    response.raise_for_status()
-    soup = BeautifulSoup(response.text, "html.parser")
-    charges: list[dict[str, Any]] = []
-
-    def add_rows(section_id: str, status: str) -> None:
-        section = soup.find(id=section_id)
-        if not section:
-            return
-        table = section.find("table")
-        if not table:
-            return
-        for row in table.select("tbody tr"):
-            cells = row.find_all("td")
-            if len(cells) == 1:
-                continue
-            if len(cells) < 7:
-                continue
-            charges.append(
-                {
-                    "chargeId": clean_text(cells[0].get_text(" ", strip=True)),
-                    "bankName": clean_text(cells[1].get_text(" ", strip=True)),
-                    "amount": parse_money_amount(cells[2].get_text(" ", strip=True)),
-                    "status": status,
-                    "creationDate": clean_text(cells[3].get_text(" ", strip=True)),
-                    "modificationDate": clean_text(cells[5].get_text(" ", strip=True)),
-                    "outstandingYears": clean_text(cells[4].get_text(" ", strip=True)),
-                    "assetsSecured": clean_text(cells[6].get_text(" ", strip=True)),
-                }
-            )
-
-    add_rows("openChargesSection", "Open")
-    add_rows("satisfiedChargesSection", "Closed")
-    return charges
-
-
-def scrape_public_company_profile(session: requests.Session, company: dict[str, Any]) -> dict[str, Any] | None:
-    cin = clean_text(company.get("cin", ""))
-    if not cin or cin == "N/A":
-        return None
-
-    profile_url = build_public_profile_url(company["name"], cin)
-    response = session.get(profile_url, timeout=REQUEST_TIMEOUT_SECONDS)
-    response.raise_for_status()
-    if "404 Error" in response.text:
-        return None
-
-    soup = BeautifulSoup(response.text, "html.parser")
-    highlights_table = soup.select_one("#companyHighlightsDataContainer table")
-    pairs = extract_table_pairs(highlights_table)
-
-    highlight_cards: dict[str, dict[str, str]] = {}
-    for card in soup.select(".highlight-card"):
-        title = clean_text(card.find("h3").get_text(" ", strip=True) if card.find("h3") else "")
-        if not title:
-            continue
-        highlight_cards[title] = {
-            "status": clean_text((card.select_one(".status") or card.select_one(".value")).get_text(" ", strip=True) if card.select_one(".status") or card.select_one(".value") else ""),
-            "date": clean_text(card.select_one(".date").get_text(" ", strip=True) if card.select_one(".date") else ""),
-            "text": clean_text(card.get_text(" ", strip=True)),
-        }
-
-    company_status_card = highlight_cards.get("Company Status", {})
-    incorp_card = highlight_cards.get("Incorp. Date", {})
-    balance_card = highlight_cards.get("Balance Sheet Date", {})
-    industry_card = highlight_cards.get("Industry", {})
-
-    authorised_match = re.search(r"Authorised Capital.*?₹([\d,]+)", response.text, re.S | re.I)
-    paid_up_match = re.search(r"Paid up Capital.*?₹([\d,]+)", response.text, re.S | re.I)
-    last_updated_match = re.search(r"As on\s*<strong>\s*([^<]+)", response.text, re.I)
-
-    raw_address = sanitize_public_value(pairs.get("Address", company.get("registeredAddress", "N/A")))
-    scraped_company = dict(company)
-    scraped_company.update(
-        {
-            "profileUrl": profile_url,
-            "lastUpdatedOn": normalize_display_date(last_updated_match.group(1)) if last_updated_match else "N/A",
-            "status": normalize_company_status(company_status_card.get("status"), company.get("status", "Active")),
-            "incorporationDate": normalize_display_date(incorp_card.get("status") or company.get("incorporationDate", "N/A")),
-            "lastBSDate": normalize_display_date(balance_card.get("status") or company.get("lastBSDate", "N/A")),
-            "lastAGMDate": normalize_display_date(re.sub(r"^AGM Date", "", balance_card.get("date", ""), flags=re.I).strip() or company.get("lastAGMDate", "N/A")),
-            "industry": sanitize_public_value(industry_card.get("status") or company.get("industry", "N/A")),
-            "nicCode": clean_text(re.sub(r"^NIC Code", "", industry_card.get("date", ""), flags=re.I)),
-            "authCap": parse_money_amount(authorised_match.group(1)) if authorised_match else company.get("authCap", 0),
-            "puc": parse_money_amount(paid_up_match.group(1)) if paid_up_match else company.get("puc", 0),
-            "registrationNumber": sanitize_public_value(pairs.get("Registration No", company.get("registrationNumber", "N/A"))),
-            "rocCode": sanitize_public_value(pairs.get("ROC Code", company.get("rocCode", "N/A"))),
-            "category": pairs.get("Company Category", company.get("category", "")) or company.get("category", ""),
-            "companySubcategory": pairs.get("Company SubCategory", company.get("companySubcategory", "")),
-            "type": "Private" if "Private" in pairs.get("Company Class", "") else company.get("type", "Public"),
-            "activeCompliance": sanitize_public_value(pairs.get("Active Compliant", company.get("activeCompliance", "N/A"))),
-            "statusUnderCirp": sanitize_public_value(pairs.get("Status Under CIRP", company.get("statusUnderCirp", "N/A"))),
-            "filingStatus": sanitize_public_value(pairs.get("Filing Status For Last 2 Years", company.get("filingStatus", "N/A"))),
-            "email": sanitize_public_value(pairs.get("Email ID", company.get("email", "N/A"))),
-            "phone": sanitize_public_value(pairs.get("Phone", company.get("phone", "N/A"))),
-            "website": sanitize_public_value(pairs.get("Website", company.get("website", "N/A"))),
-            "registeredAddress": raw_address or company.get("registeredAddress", "N/A"),
-            "businessAddress": raw_address or company.get("businessAddress", "N/A"),
-            "addresses": parse_public_address(raw_address),
-            "directors": scrape_public_directors(session, profile_url),
-            "charges": scrape_public_charges(session, profile_url),
-            "remarks": f"{company.get('remarks', '')} Public profile fields enriched from InstaFinancials.".strip(),
-        }
-    )
-    return scraped_company
-
-
-def merge_master_with_ibbi(master_company: dict[str, Any], ibbi_company: dict[str, Any]) -> dict[str, Any]:
-    merged = dict(master_company)
-
-    for field in [
-        "status",
-        "overview",
-        "applicant_name",
-        "ip_name",
-        "commencement_date",
-        "last_date_claims",
-        "announcementType",
-        "announcementDate",
-        "announcementDateIso",
-        "lastDateOfSubmission",
-        "lastDateOfSubmissionIso",
-        "insolvencyProfessionalAddress",
-        "remarks",
-        "registryUrl",
-        "announcementCount",
-        "applicants",
-        "insolvencyProfessionals",
-        "announcementHistory",
-        "trendData",
-    ]:
-        merged[field] = ibbi_company.get(field, merged.get(field))
-
-    merged["category"] = master_company.get("category") or ibbi_company.get("category")
-    merged["sourceSection"] = "master+ibbi"
-    return attach_company_source_metadata(merged)
-
-
-def load_local_master_companies() -> tuple[list[dict[str, Any]], int]:
-    if not MASTER_DATA_DIR.exists():
-        return [], 0
-
-    companies: list[dict[str, Any]] = []
-    loaded_files = 0
-
-    for file_path in sorted(MASTER_DATA_DIR.iterdir()):
-        if not file_path.is_file():
-            continue
-        suffix = file_path.suffix.lower()
-        if suffix not in {".csv", ".tsv", ".json"}:
-            continue
-
-        rows: list[dict[str, Any]] = []
-        if suffix in {".csv", ".tsv"}:
-            delimiter = "," if suffix == ".csv" else "\t"
-            with file_path.open("r", encoding="utf-8-sig", errors="replace", newline="") as file_obj:
-                rows = list(csv.DictReader(file_obj, delimiter=delimiter))
-        elif suffix == ".json":
-            with file_path.open("r", encoding="utf-8") as file_obj:
-                payload = json.load(file_obj)
-            if isinstance(payload, list):
-                rows = [item for item in payload if isinstance(item, dict)]
-
-        for row in rows:
-            company = build_master_company(row)
-            if company:
-                companies.append(company)
-
-        loaded_files += 1
-
-    deduped: dict[str, dict[str, Any]] = {}
-    for company in companies:
-        key = company["cin"] if company.get("cin") and company["cin"] != "N/A" else slugify(company["name"])
-        deduped[key] = company
-
-    name_deduped: dict[str, dict[str, Any]] = {}
-    for company in deduped.values():
-        name_key = clean_text(company["name"]).upper()
-        if name_key and name_key not in name_deduped:
-            name_deduped[name_key] = company
-
-    return list(name_deduped.values()), loaded_files
 
 
 def load_persisted_company_details() -> dict[str, dict[str, Any]]:
@@ -1882,7 +888,6 @@ class IBBIDataCache:
             return self._companies, self._stats, self._recent_announcements
 
     def _refresh(self) -> None:
-        master_companies, master_files_loaded = load_local_master_companies()
         grouped: dict[str, list[dict[str, Any]]] = {}
         all_announcements: list[dict[str, Any]] = []
         professionals: set[str] = set()
@@ -1905,29 +910,12 @@ class IBBIDataCache:
         except Exception as error:
             ibbi_error = clean_text(str(error))
 
-        ibbi_companies = [build_company(history) for history in grouped.values()]
-        master_by_key = {
-            (company["cin"] if company.get("cin") and company["cin"] != "N/A" else slugify(company["name"])): company
-            for company in master_companies
-        }
-
-        companies: list[dict[str, Any]] = []
-        for ibbi_company in ibbi_companies:
-            key = ibbi_company["cin"] if ibbi_company["cin"] != "N/A" else slugify(ibbi_company["name"])
-            master_company = master_by_key.pop(key, None)
-            if master_company:
-                companies.append(merge_master_with_ibbi(master_company, ibbi_company))
-            else:
-                ibbi_company["sourceSection"] = "ibbi"
-                companies.append(ibbi_company)
-
-        companies.extend(master_by_key.values())
+        companies = [build_company(history) for history in grouped.values()]
         companies = [attach_company_source_metadata(company) for company in companies]
         companies.sort(key=lambda item: (rank_company(item, item["name"])[1], clean_text(item["name"]).upper()), reverse=True)
         all_announcements.sort(key=lambda item: parse_date(item["announcementDate"]), reverse=True)
 
         self._companies = companies
-        self._master_companies = master_companies
         self._recent_announcements = [
             {
                 "id": f"{announcement['id']}-{index}",
@@ -1946,8 +934,6 @@ class IBBIDataCache:
         self._stats = {
             "totalAnnouncements": len(all_announcements),
             "totalCompanies": len(companies),
-            "masterCompanies": len(master_companies),
-            "masterFilesLoaded": master_files_loaded,
             "totalProfessionals": len(professionals),
             "ibbiStatus": "degraded" if ibbi_error else "ok",
             "ibbiError": ibbi_error,
@@ -1997,72 +983,10 @@ class IBBIDataCache:
                     snapshot_synced_at=self._stats.get("lastSyncedAt", "N/A"),
                     profile_cached_at=cache_entry.get("cached_at", "N/A"),
                 )
-                cached_company["directors"] = attach_director_contact_details(self._session, cached_company)
-                cached_company["documents"] = build_company_documents(cached_company)
-                self._profile_cache[cache_key] = {
-                    "data": cached_company,
-                    "fetched_at": fetched_at,
-                    "cached_at": cache_entry.get("cached_at", cached_at),
-                }
                 return cached_company
 
-        if not force:
-            persisted_company = self._get_persisted_company_detail(company)
-            if persisted_company:
-                persisted_company = attach_company_source_metadata(persisted_company)
-                persisted_company["documents"] = build_company_documents(persisted_company)
-                persisted_company = attach_company_freshness(
-                    persisted_company,
-                    snapshot_synced_at=self._stats.get("lastSyncedAt", "N/A"),
-                    profile_cached_at=clean_text(persisted_company.get("profileCachedAt", "")) or cached_at,
-                )
-                persisted_company["directors"] = attach_director_contact_details(self._session, persisted_company)
-                if cache_key:
-                    self._profile_cache[cache_key] = {
-                        "data": persisted_company,
-                        "fetched_at": time.time(),
-                        "cached_at": persisted_company.get("profileCachedAt", cached_at),
-                    }
-                return persisted_company
-
-        enriched = dict(company)
-
-        try:
-            enriched = merge_company_enrichment(enriched, scrape_public_company_profile(self._session, enriched))
-        except Exception:
-            pass
-
-        try:
-            enriched = merge_company_enrichment(enriched, scrape_falcon_company_profile(self._session, enriched))
-        except Exception:
-            pass
-
-        try:
-            enriched["news"] = build_company_news(self._session, enriched)
-        except Exception:
-            enriched["news"] = build_registry_updates(enriched)
-
-        enriched["directors"] = attach_director_contact_details(self._session, enriched)
-        enriched = attach_company_source_metadata(enriched)
+        enriched = attach_company_source_metadata(dict(company))
         enriched["documents"] = build_company_documents(enriched)
-
-        geocode_key = clean_text(
-            (enriched.get("addresses") or [{}])[0].get("raw") if enriched.get("addresses") else enriched.get("registeredAddress", "")
-        )
-        if geocode_key:
-            try:
-                if geocode_key not in self._geocode_cache:
-                    self._geocode_cache[geocode_key] = geocode_company_address(self._session, geocode_key) or {}
-                if self._geocode_cache.get(geocode_key):
-                    enriched["mapLocation"] = self._geocode_cache[geocode_key]
-                    if enriched.get("addresses"):
-                        if "latitude" in self._geocode_cache[geocode_key]:
-                            enriched["addresses"][0]["latitude"] = self._geocode_cache[geocode_key]["latitude"]
-                        if "longitude" in self._geocode_cache[geocode_key]:
-                            enriched["addresses"][0]["longitude"] = self._geocode_cache[geocode_key]["longitude"]
-            except Exception:
-                pass
-
         enriched = attach_company_freshness(
             enriched,
             snapshot_synced_at=self._stats.get("lastSyncedAt", "N/A"),
@@ -2343,27 +1267,6 @@ def list_sources() -> list[dict[str, str]]:
             "portalType": "government",
             "mode": "live-scrape",
             "url": IBBI_CLAIMS_SEARCH_URL,
-        },
-        {
-            "id": "mca_master_data",
-            "name": "MCA Master Data",
-            "portalType": "government",
-            "mode": "manual-assisted",
-            "url": MCA_MASTER_DATA_URL,
-        },
-        {
-            "id": "gst_taxpayer_search",
-            "name": "GST Taxpayer Search",
-            "portalType": "government",
-            "mode": "manual-assisted",
-            "url": GST_TAXPAYER_SEARCH_URL,
-        },
-        {
-            "id": "udyam_verify",
-            "name": "Udyam Verify",
-            "portalType": "government",
-            "mode": "manual-assisted",
-            "url": UDYAM_SEARCH_URL,
         },
     ]
 

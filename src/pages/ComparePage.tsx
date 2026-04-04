@@ -51,17 +51,20 @@ const hasMeaningfulText = (value: string) => {
 const compareRowConfigs: CompareRowConfig[] = [
   {
     label: "Status",
-    getValue: (company) => company.status || "N/A",
+    getValue: (company) => company.status || "",
+    shouldShow: (companies) => companies.some((c) => hasMeaningfulText(c.status || "")),
     description: "Current operating or insolvency status from the latest enriched company profile.",
   },
   {
     label: "Type",
-    getValue: (company) => company.type || "N/A",
+    getValue: (company) => company.type || "",
+    shouldShow: (companies) => companies.some((c) => hasMeaningfulText(c.type || "")),
     description: "Legal entity type such as Private, Public, LLP, or OPC.",
   },
   {
     label: "Category",
-    getValue: (company) => company.category || "N/A",
+    getValue: (company) => company.category || "",
+    shouldShow: (companies) => companies.some((c) => hasMeaningfulText(c.category || "")),
     description: "Entity category or latest insolvency/registry classification.",
   },
   {
@@ -138,7 +141,8 @@ const compareRowConfigs: CompareRowConfig[] = [
   },
   {
     label: "Source",
-    getValue: (company) => company.sourceSection || "N/A",
+    getValue: (company) => company.sourceSection || "",
+    shouldShow: (companies) => companies.some((c) => hasMeaningfulText(c.sourceSection || "")),
     description: "Primary source family from which the company was discovered.",
   },
 ];

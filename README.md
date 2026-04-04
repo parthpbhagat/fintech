@@ -1,87 +1,82 @@
-# Company Insights Hub
+# Company Insights Hub (IBBI Edition)
 
-A comprehensive platform for tracking company insolvency and bankruptcy cases in India, providing real-time updates, detailed case information, and advanced analytics.
+A specialized platform for tracking company insolvency and bankruptcy cases in India, exclusively utilizing data from the **IBBI (Insolvency and Bankruptcy Board of India)**.
 
 ## Features
 
-- **Real-time Case Tracking**: Monitor insolvency and bankruptcy cases with live status updates.
-- **Advanced Search & Filtering**: Find companies using advanced search criteria including CIN, name, status, and more.
-- **Company Analytics**: Deep dive into company financials, legal status, and case history.
-- **News Aggregation**: Stay updated with the latest news and announcements from IBBI and other sources.
-- **User Authentication**: Secure login and user management system.
-- **Comparison Tool**: Compare multiple companies side-by-side to analyze trends and metrics.
+- **Real-time IBBI Tracking**: Live fetching and parsing of IBBI Public Announcements and Claims data.
+- **Advanced Search**: Search companies by name or CIN directly from the IBBI announcement database.
+- **Claims Insights**: Automatic lookup of claims data and insolvency professional details.
+- **Data Export**: Download company summaries and profile snapshots for offline use.
+- **Authenticated Access**: Secure signup and login with OTP verification to protect access.
 
 ## Tech Stack
 
-- **Frontend**: React, TypeScript, Tailwind CSS
-- **Backend**: Node.js, Express
-- **Database**: MongoDB
-- **Authentication**: JWT (JSON Web Tokens)
-- **Deployment**: Vercel
+- **Frontend**: React, TypeScript, Tailwind CSS, TanStack Query.
+- **Backend**: Python, FastAPI, BeautifulSoup (for live scraping), Requests.
+- **Database**: SQLite (for user management), Local JSON Store (for profile caching).
 
 ## Getting Started
 
 ### Prerequisites
 
-- Node.js (v14 or higher)
-- MongoDB
-- npm or yarn
+- Python 3.9+ installed on your system.
+- Node.js and npm (for the frontend).
 
 ### Installation
 
-1. Clone the repository:
-   ```bash
-   git clone <repository-url>
-   cd company-insights-hub
-   ```
-
-2. Install dependencies:
+1. Clone the repository and navigate to the project directory.
+2. Install Python dependencies (ensure `requests`, `fastapi`, `uvicorn`, `beautifulsoup4`, and `pandas` are available).
+3. Install frontend dependencies:
    ```bash
    npm install
    ```
 
 ### Configuration
 
-Create a `.env` file in the root directory with the following variables:
-
+Create a `backend/.env` file with the following variables (optional for full features):
 ```env
-PORT=5000
-MONGODB_URI=your_mongodb_connection_string
-JWT_SECRET=your_jwt_secret
+JWT_SECRET=your_secret_here
+EMAIL_USER=your_gmail_user
+EMAIL_PASS=your_gmail_app_password
+# To enable SMS OTP, provide Twilio credentials:
+TWILIO_ACCOUNT_SID=...
+TWILIO_AUTH_TOKEN=...
+TWILIO_FROM_NUMBER=...
 ```
 
 ### Running the Application
 
-Start the development server:
+1. **Start the Backend**:
+   Navigate to the `backend` folder and run:
+   ```bash
+   python pipeline.py
+   ```
+   The API will run on `http://localhost:8005`.
 
-```bash
-npm run dev
-```
-
-The application will be accessible at `http://localhost:5173`.
+2. **Start the Frontend**:
+   In the project root, run:
+   ```bash
+   npm run dev
+   ```
+   The application will be accessible at `http://localhost:8080`.
 
 ## Project Structure
 
 ```
 company-insights-hub/
+├── backend/
+│   ├── pipeline.py      # Main IBBI scraper and API server
+│   ├── auth.py          # Authentication and User Management
+│   ├── data/            # Local data storage (SQLite, JSON cache)
 ├── src/
-│   ├── components/      # React components
-│   ├── contexts/        # React contexts (AuthContext, etc.)
-│   ├── pages/           # Page components
-│   ├── services/        # API services
-│   ├── utils/           # Utility functions
-│   └── App.tsx          # Main application component
-├── server/              # Backend server
-│   ├── config/          # Configuration
-│   ├── controllers/     # Request handlers
-│   ├── models/          # Database models
-│   ├── routes/          # API routes
-│   └── server.ts        # Server entry point
-├── .env                 # Environment variables
-├── package.json         # Project dependencies
-└── README.md            # Project documentation
+│   ├── components/      # React components (Navbar, UI elements)
+│   ├── contexts/        # Auth Context
+│   ├── pages/           # Page components (Index, Details, News)
+│   ├── services/        # API services (Connects to backend)
+└── README.md            # You are here
 ```
 
-## Contributing
+## Disclaimer
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+This application is for educational and research purposes. Data is gathered from publicly available sources on the IBBI website.

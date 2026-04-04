@@ -68,26 +68,44 @@ const CompanyDetail = () => {
     );
   }
 
-  const tabs = ["Overview", "Addresses", "Map", "Directors", "Charges", "Documents", "News", "IBBI", "Source"];
   const latestAnnouncement = company.announcementHistory?.[0];
   const addresses = company.addresses?.length
     ? company.addresses
-    : [
-        {
-          type: "Registered Address",
-          line1: company.registeredAddress || "N/A",
-          line2: "",
-          line3: "",
-          line4: "",
-          locality: "",
-          district: "",
-          city: "",
-          state: "",
-          postalCode: "",
-          country: "",
-          raw: company.registeredAddress || "N/A",
-        },
-      ];
+    : company.registeredAddress && company.registeredAddress !== "N/A"
+      ? [
+          {
+            type: "Registered Address",
+            line1: company.registeredAddress,
+            line2: "",
+            line3: "",
+            line4: "",
+            locality: "",
+            district: "",
+            city: "",
+            state: "",
+            postalCode: "",
+            country: "",
+            raw: company.registeredAddress,
+          },
+        ]
+      : [];
+
+  const hasIBBIData =
+    !!company.announcementType ||
+    !!company.announcementDate ||
+    !!company.applicant_name ||
+    !!company.ip_name ||
+    (company.announcementHistory && company.announcementHistory.length > 0);
+
+  const tabs = ["Overview"];
+  if (addresses.length > 0) tabs.push("Addresses");
+  if (company.mapLocation || (company.registeredAddress && company.registeredAddress !== "N/A")) tabs.push("Map");
+  if (company.directors && company.directors.length > 0) tabs.push("Directors");
+  if (company.charges && company.charges.length > 0) tabs.push("Charges");
+  if (company.documents && company.documents.length > 0) tabs.push("Documents");
+  if (company.news && company.news.length > 0) tabs.push("News");
+  if (hasIBBIData) tabs.push("IBBI");
+  tabs.push("Source");
 
   return (
 <div className="bg-[#F4F7F9] min-h-screen">
@@ -104,58 +122,72 @@ const CompanyDetail = () => {
                   <StatusBadge status={company.status} />
                 </div>
                 <div className="flex flex-wrap gap-x-4 gap-y-1 text-slate-500 font-medium text-xs">
-                  <span className="flex items-center gap-2">
-                    <Building2 className="w-4 h-4" />
-                    CIN/LLPIN: {company.cin || "N/A"}
-                  </span>
-                  <span className="flex items-center gap-2">
-                    <Calendar className="w-4 h-4" />
-                    Incorporated: {company.incorporationDate || "N/A"}
-                  </span>
-                  <span className="flex items-center gap-2">
-                    <Landmark className="w-4 h-4" />
-                    ROC: {company.rocCode || "N/A"}
-                  </span>
+                  {company.cin && company.cin !== "N/A" && (
+                    <span className="flex items-center gap-2">
+                      <Building2 className="w-4 h-4" />
+                      CIN/LLPIN: {company.cin}
+                    </span>
+                  )}
+                  {company.incorporationDate && company.incorporationDate !== "N/A" && (
+                    <span className="flex items-center gap-2">
+                      <Calendar className="w-4 h-4" />
+                      Incorporated: {company.incorporationDate}
+                    </span>
+                  )}
+                  {company.rocCode && company.rocCode !== "N/A" && (
+                    <span className="flex items-center gap-2">
+                      <Landmark className="w-4 h-4" />
+                      ROC: {company.rocCode}
+                    </span>
+                  )}
                 </div>
                 <p className="mt-2 text-xs md:text-sm text-slate-500 max-w-4xl line-clamp-3">{company.overview}</p>
               </div>
             </div>
 
             <div className="grid sm:grid-cols-2 gap-2 min-w-full xl:min-w-[360px] xl:max-w-[460px]">
-              <MetricCard
-                label="Authorised Capital"
-                value={company.authCap ? `Rs ${currencyFormatter.format(company.authCap)}` : "N/A"}
-                onClick={() =>
-                  openFieldInsight(
-                    setActiveInsight,
-                    "Authorised Capital",
-                    company.authCap ? `Rs ${currencyFormatter.format(company.authCap)}` : "N/A",
-                    "Authorised capital scraped from public company profile sources.",
-                  )
-                }
-              />
-              <MetricCard
-                label="Paid Up Capital"
-                value={company.puc ? `Rs ${currencyFormatter.format(company.puc)}` : "N/A"}
-                onClick={() =>
-                  openFieldInsight(
-                    setActiveInsight,
-                    "Paid Up Capital",
-                    company.puc ? `Rs ${currencyFormatter.format(company.puc)}` : "N/A",
-                    "Paid up capital scraped from public company profile sources.",
-                  )
-                }
-              />
-              <MetricCard
-                label="Last AGM"
-                value={company.lastAGMDate || "N/A"}
-                onClick={() => openFieldInsight(setActiveInsight, "Last AGM", company.lastAGMDate || "N/A", "Latest AGM date currently available for this company.")}
-              />
-              <MetricCard
-                label="Last B/S"
-                value={company.lastBSDate || "N/A"}
-                onClick={() => openFieldInsight(setActiveInsight, "Last Balance Sheet", company.lastBSDate || "N/A", "Latest balance sheet date currently available for this company.")}
-              />
+              {company.authCap && company.authCap > 0 && (
+                <MetricCard
+                  label="Authorised Capital"
+                  value={`Rs ${currencyFormatter.format(company.authCap)}`}
+                  onClick={() =>
+                    openFieldInsight(
+                      setActiveInsight,
+                      "Authorised Capital",
+                      `Rs ${currencyFormatter.format(company.authCap)}`,
+                      "Authorised capital scraped from public company profile sources.",
+                    )
+                  }
+                />
+              )}
+              {company.puc && company.puc > 0 && (
+                <MetricCard
+                  label="Paid Up Capital"
+                  value={`Rs ${currencyFormatter.format(company.puc)}`}
+                  onClick={() =>
+                    openFieldInsight(
+                      setActiveInsight,
+                      "Paid Up Capital",
+                      `Rs ${currencyFormatter.format(company.puc)}`,
+                      "Paid up capital scraped from public company profile sources.",
+                    )
+                  }
+                />
+              )}
+              {company.lastAGMDate && company.lastAGMDate !== "N/A" && (
+                <MetricCard
+                  label="Last AGM"
+                  value={company.lastAGMDate}
+                  onClick={() => openFieldInsight(setActiveInsight, "Last AGM", company.lastAGMDate || "N/A", "Latest AGM date currently available for this company.")}
+                />
+              )}
+              {company.lastBSDate && company.lastBSDate !== "N/A" && (
+                <MetricCard
+                  label="Last B/S"
+                  value={company.lastBSDate}
+                  onClick={() => openFieldInsight(setActiveInsight, "Last Balance Sheet", company.lastBSDate || "N/A", "Latest balance sheet date currently available for this company.")}
+                />
+              )}
             </div>
 
             <div className="flex gap-2 flex-wrap">
@@ -200,18 +232,18 @@ const CompanyDetail = () => {
                     <div className="lg:col-span-2">
                       <SectionTitle title="Company Master" />
                       <div className="grid md:grid-cols-2 gap-2">
-                        <InfoRow label="Registration Number" value={company.registrationNumber || "N/A"} onClick={() => openFieldInsight(setActiveInsight, "Registration Number", company.registrationNumber || "N/A", "Registry registration number for this company.")} />
-                        <InfoRow label="Company Class" value={company.type || "N/A"} onClick={() => openFieldInsight(setActiveInsight, "Company Class", company.type || "N/A", "Legal structure of this company.")} />
-                        <InfoRow label="Company Category" value={company.category || "N/A"} onClick={() => openFieldInsight(setActiveInsight, "Company Category", company.category || "N/A", "Entity category or insolvency classification.")} />
-                        <InfoRow label="Company Subcategory" value={company.companySubcategory || "N/A"} onClick={() => openFieldInsight(setActiveInsight, "Company Subcategory", company.companySubcategory || "N/A", "Subcategory from public company profile sources.")} />
-                        <InfoRow label="Company Status" value={company.status || "N/A"} onClick={() => openFieldInsight(setActiveInsight, "Company Status", company.status || "N/A", "Latest available company status.")} />
-                        <InfoRow label="Listing Status" value={company.listingStatus || "N/A"} onClick={() => openFieldInsight(setActiveInsight, "Listing Status", company.listingStatus || "N/A", "Indicates whether the company is listed or unlisted.")} />
-                        <InfoRow label="Email" value={company.email || "N/A"} onClick={() => openFieldInsight(setActiveInsight, "Email", company.email || "N/A", "Publicly visible email captured from available sources.")} />
-                        <InfoRow label="Website" value={company.website || "N/A"} onClick={() => openFieldInsight(setActiveInsight, "Website", company.website || "N/A", "Public website captured from available sources.")} />
-                        <InfoRow label="Industry" value={company.industry || "N/A"} onClick={() => openFieldInsight(setActiveInsight, "Industry", company.industry || "N/A", "Business activity or industry mapped from public sources.")} />
-                        <InfoRow label="NIC Code" value={company.nicCode || "N/A"} onClick={() => openFieldInsight(setActiveInsight, "NIC Code", company.nicCode || "N/A", "NIC code when it is available from public company data.")} />
-                        <InfoRow label="Filing Status" value={company.filingStatus || "N/A"} onClick={() => openFieldInsight(setActiveInsight, "Filing Status", company.filingStatus || "N/A", "Recent filing status seen in public company data.")} />
-                        <InfoRow label="Active Compliance" value={company.activeCompliance || "N/A"} onClick={() => openFieldInsight(setActiveInsight, "Active Compliance", company.activeCompliance || "N/A", "Compliance flag from public company data.")} />
+                        <InfoRow label="Registration Number" value={company.registrationNumber} onClick={() => openFieldInsight(setActiveInsight, "Registration Number", company.registrationNumber || "N/A", "Registry registration number for this company.")} />
+                        <InfoRow label="Company Class" value={company.type} onClick={() => openFieldInsight(setActiveInsight, "Company Class", company.type || "N/A", "Legal structure of this company.")} />
+                        <InfoRow label="Company Category" value={company.category} onClick={() => openFieldInsight(setActiveInsight, "Company Category", company.category || "N/A", "Entity category or insolvency classification.")} />
+                        <InfoRow label="Company Subcategory" value={company.companySubcategory} onClick={() => openFieldInsight(setActiveInsight, "Company Subcategory", company.companySubcategory || "N/A", "Subcategory from public company profile sources.")} />
+                        <InfoRow label="Company Status" value={company.status} onClick={() => openFieldInsight(setActiveInsight, "Company Status", company.status || "N/A", "Latest available company status.")} />
+                        <InfoRow label="Listing Status" value={company.listingStatus} onClick={() => openFieldInsight(setActiveInsight, "Listing Status", company.listingStatus || "N/A", "Indicates whether the company is listed or unlisted.")} />
+                        <InfoRow label="Email" value={company.email} onClick={() => openFieldInsight(setActiveInsight, "Email", company.email || "N/A", "Publicly visible email captured from available sources.")} />
+                        <InfoRow label="Website" value={company.website} onClick={() => openFieldInsight(setActiveInsight, "Website", company.website || "N/A", "Public website captured from available sources.")} />
+                        <InfoRow label="Industry" value={company.industry} onClick={() => openFieldInsight(setActiveInsight, "Industry", company.industry || "N/A", "Business activity or industry mapped from public sources.")} />
+                        <InfoRow label="NIC Code" value={company.nicCode} onClick={() => openFieldInsight(setActiveInsight, "NIC Code", company.nicCode || "N/A", "NIC code when it is available from public company data.")} />
+                        <InfoRow label="Filing Status" value={company.filingStatus} onClick={() => openFieldInsight(setActiveInsight, "Filing Status", company.filingStatus || "N/A", "Recent filing status seen in public company data.")} />
+                        <InfoRow label="Active Compliance" value={company.activeCompliance} onClick={() => openFieldInsight(setActiveInsight, "Active Compliance", company.activeCompliance || "N/A", "Compliance flag from public company data.")} />
                       </div>
                     </div>
                     <div>
@@ -225,73 +257,81 @@ const CompanyDetail = () => {
                     </div>
                   </div>
 
-                  <div>
-                    <SectionTitle title="Address Preview" />
-                    <AddressTable
-                      addresses={addresses}
-                      onInspect={(address) =>
-                        setActiveInsight({
-                          title: `${address.type} - Address`,
-                          description: "Structured address details captured for this company.",
-                          facts: [
-                            { label: "Full Address", value: address.raw || "N/A" },
-                            { label: "District", value: address.district || "N/A" },
-                            { label: "City", value: address.city || "N/A" },
-                            { label: "State", value: address.state || "N/A" },
-                            { label: "Postal Code", value: address.postalCode || "N/A" },
-                          ],
-                        })
-                      }
-                    />
-                  </div>
+                  {addresses.length > 0 && (
+                    <div>
+                      <SectionTitle title="Address Preview" />
+                      <AddressTable
+                        addresses={addresses}
+                        onInspect={(address) =>
+                          setActiveInsight({
+                            title: `${address.type} - Address`,
+                            description: "Structured address details captured for this company.",
+                            facts: [
+                              { label: "Full Address", value: address.raw || "N/A" },
+                              { label: "District", value: address.district || "N/A" },
+                              { label: "City", value: address.city || "N/A" },
+                              { label: "State", value: address.state || "N/A" },
+                              { label: "Postal Code", value: address.postalCode || "N/A" },
+                            ],
+                          })
+                        }
+                      />
+                    </div>
+                  )}
 
-                  <div>
-                    <SectionTitle title="Location Map" />
-                    <MapSection
-                      companyName={company.name}
-                      mapLocation={company.mapLocation}
-                      fallbackAddress={company.registeredAddress || addresses[0]?.raw || "N/A"}
-                    />
-                  </div>
+                  {(company.mapLocation || (company.registeredAddress && company.registeredAddress !== "N/A")) && (
+                    <div>
+                      <SectionTitle title="Location Map" />
+                      <MapSection
+                        companyName={company.name}
+                        mapLocation={company.mapLocation}
+                        fallbackAddress={company.registeredAddress || addresses[0]?.raw || "N/A"}
+                      />
+                    </div>
+                  )}
 
-                  <div>
-                    <SectionTitle title="Latest News & Updates" />
-                    <NewsList
-                      news={company.news || []}
-                      onInspect={(item) =>
-                        setActiveInsight({
-                          title: item.title,
-                          subtitle: item.source,
-                          description: item.summary,
-                          facts: [
-                            { label: "Date", value: item.date },
-                            { label: "Source", value: item.source },
-                            { label: "Link", value: item.url || "N/A" },
-                          ],
-                        })
-                      }
-                    />
-                  </div>
+                  {company.news && company.news.length > 0 && (
+                    <div>
+                      <SectionTitle title="Latest News & Updates" />
+                      <NewsList
+                        news={company.news}
+                        onInspect={(item) =>
+                          setActiveInsight({
+                            title: item.title,
+                            subtitle: item.source,
+                            description: item.summary,
+                            facts: [
+                              { label: "Date", value: item.date },
+                              { label: "Source", value: item.source },
+                              { label: "Link", value: item.url || "N/A" },
+                            ],
+                          })
+                        }
+                      />
+                    </div>
+                  )}
 
-                  <div>
-                    <SectionTitle title="Documents & Downloads" />
-                    <DocumentsList
-                      documents={company.documents || []}
-                      onInspect={(document) =>
-                        setActiveInsight({
-                          title: document.fileName,
-                          subtitle: document.category,
-                          description: "Document or source link available for this company.",
-                          facts: [
-                            { label: "Source", value: document.source || "N/A" },
-                            { label: "Date", value: document.dateOfFiling || "N/A" },
-                            { label: "Open URL", value: document.url || "N/A" },
-                            { label: "Download URL", value: document.downloadUrl || "N/A" },
-                          ],
-                        })
-                      }
-                    />
-                  </div>
+                  {company.documents && company.documents.length > 0 && (
+                    <div>
+                      <SectionTitle title="Documents & Downloads" />
+                      <DocumentsList
+                        documents={company.documents}
+                        onInspect={(document) =>
+                          setActiveInsight({
+                            title: document.fileName,
+                            subtitle: document.category,
+                            description: "Document or source link available for this company.",
+                            facts: [
+                              { label: "Source", value: document.source || "N/A" },
+                              { label: "Date", value: document.dateOfFiling || "N/A" },
+                              { label: "Open URL", value: document.url || "N/A" },
+                              { label: "Download URL", value: document.downloadUrl || "N/A" },
+                            ],
+                          })
+                        }
+                      />
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -424,12 +464,14 @@ const CompanyDetail = () => {
                       </p>
                     </div>
                   </div>
-                  <div className="grid md:grid-cols-2 gap-6">
-                    <DataBox label="Announcement type" value={company.announcementType || "N/A"} icon={<FileText className="w-5 h-5" />} />
-                    <DataBox label="Latest announcement" value={company.announcementDate || "N/A"} icon={<Calendar className="w-5 h-5" />} />
-                    <DataBox label="Applicant" value={company.applicant_name || "N/A"} icon={<Landmark className="w-5 h-5" />} />
-                    <DataBox label="Insolvency professional" value={company.ip_name || "N/A"} icon={<User className="w-5 h-5" />} />
-                  </div>
+                  {(company.announcementType || company.announcementDate || company.applicant_name || company.ip_name) && (
+                    <div className="grid md:grid-cols-2 gap-6">
+                      <DataBox label="Announcement type" value={company.announcementType || "N/A"} icon={<FileText className="w-5 h-5" />} />
+                      <DataBox label="Latest announcement" value={company.announcementDate || "N/A"} icon={<Calendar className="w-5 h-5" />} />
+                      <DataBox label="Applicant" value={company.applicant_name || "N/A"} icon={<Landmark className="w-5 h-5" />} />
+                      <DataBox label="Insolvency professional" value={company.ip_name || "N/A"} icon={<User className="w-5 h-5" />} />
+                    </div>
+                  )}
                   <div className="space-y-4">
                     {(company.announcementHistory || []).length > 0 ? (
                       (company.announcementHistory || []).map((announcement) => (
@@ -572,12 +614,15 @@ const MetricCard = ({
   label: string;
   value: string;
   onClick?: () => void;
-}) => (
-  <button type="button" onClick={onClick} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-left transition hover:border-[#81BC06]">
-    <p className="text-[9px] font-black uppercase tracking-[0.15em] text-slate-400">{label}</p>
-    <p className="mt-1 text-sm font-black text-slate-900">{value}</p>
-  </button>
-);
+}) => {
+  if (!value || value === "N/A") return null;
+  return (
+    <button type="button" onClick={onClick} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-left transition hover:border-[#81BC06]">
+      <p className="text-[9px] font-black uppercase tracking-[0.15em] text-slate-400">{label}</p>
+      <p className="mt-1 text-sm font-black text-slate-900">{value}</p>
+    </button>
+  );
+};
 
 const InfoRow = ({
   label,
@@ -587,12 +632,15 @@ const InfoRow = ({
   label: string;
   value: string;
   onClick?: () => void;
-}) => (
-  <button type="button" onClick={onClick} className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2 text-left transition hover:border-[#81BC06]">
-    <p className="text-[9px] font-black uppercase tracking-[0.15em] text-slate-400">{label}</p>
-    <p className="mt-1 text-xs font-bold text-slate-900 break-words">{value}</p>
-  </button>
-);
+}) => {
+  if (!value || value === "N/A") return null;
+  return (
+    <button type="button" onClick={onClick} className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2 text-left transition hover:border-[#81BC06]">
+      <p className="text-[9px] font-black uppercase tracking-[0.15em] text-slate-400">{label}</p>
+      <p className="mt-1 text-xs font-bold text-slate-900 break-words">{value}</p>
+    </button>
+  );
+};
 
 const QuickRow = ({
   icon,
@@ -604,15 +652,18 @@ const QuickRow = ({
   label: string;
   value: string;
   onClick?: () => void;
-}) => (
-  <button type="button" onClick={onClick} className="flex w-full items-start gap-2 rounded-lg border border-slate-100 bg-slate-50 px-3 py-2 text-left transition hover:border-[#81BC06]">
-    <div className="mt-0.5 text-[#81BC06]">{icon}</div>
-    <div>
-      <p className="text-[9px] font-black uppercase tracking-[0.15em] text-slate-400">{label}</p>
-      <p className="mt-1 text-xs font-bold text-slate-900 break-words">{value}</p>
-    </div>
-  </button>
-);
+}) => {
+  if (!value || value === "N/A" || value === "0") return null;
+  return (
+    <button type="button" onClick={onClick} className="flex w-full items-start gap-2 rounded-lg border border-slate-100 bg-slate-50 px-3 py-2 text-left transition hover:border-[#81BC06]">
+      <div className="mt-0.5 text-[#81BC06]">{icon}</div>
+      <div>
+        <p className="text-[9px] font-black uppercase tracking-[0.15em] text-slate-400">{label}</p>
+        <p className="mt-1 text-xs font-bold text-slate-900 break-words">{value}</p>
+      </div>
+    </button>
+  );
+};
 
 const AddressTable = ({ addresses, onInspect }: { addresses: CompanyAddress[]; onInspect?: (address: CompanyAddress) => void }) => {
   if (!addresses.length) {
@@ -637,10 +688,10 @@ const AddressTable = ({ addresses, onInspect }: { addresses: CompanyAddress[]; o
             <tr key={`${address.type}-${index}`} className="border-t border-slate-100 cursor-pointer hover:bg-slate-50" onClick={() => onInspect?.(address)}>
               <td className="px-3 py-2 font-bold text-slate-700">{address.type}</td>
               <td className="px-3 py-2 text-slate-600">{address.raw || [address.line1, address.line2, address.line3, address.line4].filter(Boolean).join(", ")}</td>
-              <td className="px-3 py-2 text-slate-600">{address.city || "N/A"}</td>
-              <td className="px-3 py-2 text-slate-600">{address.state || "N/A"}</td>
-              <td className="px-3 py-2 text-slate-600">{address.postalCode || "N/A"}</td>
-              <td className="px-3 py-2 text-slate-600">{address.country || "N/A"}</td>
+              <td className="px-3 py-2 text-slate-600">{address.city && address.city !== "N/A" ? address.city : "-"}</td>
+              <td className="px-3 py-2 text-slate-600">{address.state && address.state !== "N/A" ? address.state : "-"}</td>
+              <td className="px-3 py-2 text-slate-600">{address.postalCode && address.postalCode !== "N/A" ? address.postalCode : "-"}</td>
+              <td className="px-3 py-2 text-slate-600">{address.country && address.country !== "N/A" ? address.country : "-"}</td>
             </tr>
           ))}
         </tbody>
@@ -673,9 +724,9 @@ const DirectorsTable = ({ directors, onInspect }: { directors: Director[]; onIns
               <td className="px-3 py-2 text-slate-700 font-bold">{director.din}</td>
               <td className="px-3 py-2 text-slate-700">{director.name}</td>
               <td className="px-3 py-2 text-slate-600">{director.designation}</td>
-              <td className="px-3 py-2 text-slate-600">{director.appointmentDate || "N/A"}</td>
-              <td className="px-3 py-2 text-slate-600">{director.totalDirectorships || "N/A"}</td>
-              <td className="px-3 py-2 text-slate-600">{director.status}</td>
+              <td className="px-3 py-2 text-slate-600">{director.appointmentDate && director.appointmentDate !== "N/A" ? director.appointmentDate : "-"}</td>
+              <td className="px-3 py-2 text-slate-600">{director.totalDirectorships && String(director.totalDirectorships) !== "N/A" ? director.totalDirectorships : "-"}</td>
+              <td className="px-3 py-2 text-slate-600">{director.status ? director.status : "-"}</td>
             </tr>
           ))}
         </tbody>
@@ -708,11 +759,11 @@ const ChargesTable = ({ charges, onInspect }: { charges: Charge[]; onInspect?: (
             <tr key={`${charge.chargeId}-${index}`} className="border-t border-slate-100 cursor-pointer hover:bg-slate-50" onClick={() => onInspect?.(charge)}>
               <td className="px-3 py-2 text-slate-700 font-bold">{charge.chargeId}</td>
               <td className="px-3 py-2 text-slate-700">{charge.bankName}</td>
-              <td className="px-3 py-2 text-slate-600">{charge.amount ? `${charge.amount}` : "0"}</td>
-              <td className="px-3 py-2 text-slate-600">{charge.status}</td>
-              <td className="px-3 py-2 text-slate-600">{charge.creationDate || "N/A"}</td>
-              <td className="px-3 py-2 text-slate-600">{charge.modificationDate || "N/A"}</td>
-              <td className="px-3 py-2 text-slate-600">{charge.assetsSecured || "N/A"}</td>
+              <td className="px-3 py-2 text-slate-600">{charge.amount && charge.amount > 0 ? `${charge.amount}` : "-"}</td>
+              <td className="px-3 py-2 text-slate-600">{charge.status ? charge.status : "-"}</td>
+              <td className="px-3 py-2 text-slate-600">{charge.creationDate && charge.creationDate !== "N/A" ? charge.creationDate : "-"}</td>
+              <td className="px-3 py-2 text-slate-600">{charge.modificationDate && charge.modificationDate !== "N/A" ? charge.modificationDate : "-"}</td>
+              <td className="px-3 py-2 text-slate-600">{charge.assetsSecured && charge.assetsSecured !== "N/A" ? charge.assetsSecured : "-"}</td>
             </tr>
           ))}
         </tbody>
@@ -727,22 +778,28 @@ const EmptyState = ({ text }: { text: string }) => (
   </div>
 );
 
-const DataBox = ({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) => (
-  <div className="p-3 bg-slate-50 rounded-lg border border-slate-100">
-    <div className="flex items-center gap-2 mb-1 text-[#81BC06]">
-      {icon}
-      <span className="text-[9px] uppercase font-black tracking-widest text-slate-400">{label}</span>
+const DataBox = ({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) => {
+  if (!value || value === "N/A") return null;
+  return (
+    <div className="p-3 bg-slate-50 rounded-lg border border-slate-100">
+      <div className="flex items-center gap-2 mb-1 text-[#81BC06]">
+        {icon}
+        <span className="text-[9px] uppercase font-black tracking-widest text-slate-400">{label}</span>
+      </div>
+      <p className="text-slate-800 font-black text-sm break-words">{value}</p>
     </div>
-    <p className="text-slate-800 font-black text-sm break-words">{value || "N/A"}</p>
-  </div>
-);
+  );
+};
 
-const SourceMeta = ({ label, value }: { label: string; value: string }) => (
-  <div className="flex items-center justify-between gap-3 text-sm">
-    <span className="text-slate-500">{label}</span>
-    <span className="font-bold text-slate-900 text-right">{value || "N/A"}</span>
-  </div>
-);
+const SourceMeta = ({ label, value }: { label: string; value: string }) => {
+  if (!value || value === "N/A") return null;
+  return (
+    <div className="flex items-center justify-between gap-3 text-sm">
+      <span className="text-slate-500">{label}</span>
+      <span className="font-bold text-slate-900 text-right">{value}</span>
+    </div>
+  );
+};
 
 const SourceCard = ({ source }: { source: CompanyDataSource }) => (
   <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
