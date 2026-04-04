@@ -1,8 +1,8 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
-
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&display=swap');
 
 @layer base {
   :root {
@@ -133,18 +133,18 @@
     @apply bg-card rounded-lg border p-4 shadow-sm;
   }
   .status-active {
-    @apply bg-green-100 text-green-700 px-2 py-0.5 rounded text-xs font-medium;
+    @apply bg-green-100 text-green-700 px-2 py-0.5 rounded text-[10px] font-semibold;
   }
   .status-open {
-    @apply bg-blue-100 text-blue-700 px-2 py-0.5 rounded text-xs font-medium;
+    @apply bg-blue-100 text-blue-700 px-2 py-0.5 rounded text-[10px] font-semibold;
   }
   .status-closed {
-    @apply bg-gray-100 text-gray-600 px-2 py-0.5 rounded text-xs font-medium;
+    @apply bg-gray-100 text-gray-600 px-2 py-0.5 rounded text-[10px] font-semibold;
   }
   .status-cancelled {
-    @apply bg-red-100 text-red-600 px-2 py-0.5 rounded text-xs font-medium;
+    @apply bg-red-100 text-red-600 px-2 py-0.5 rounded text-[10px] font-semibold;
   }
   .status-provisional {
-    @apply bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded text-xs font-medium;
+    @apply bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded text-[10px] font-semibold;
   }
 }

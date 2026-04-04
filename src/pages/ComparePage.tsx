@@ -332,7 +332,7 @@ const ComparePage = () => {
     [sourceFilter, statusFilter, typeFilter],
   );
 
-  const { data: browseCompanies = [] } = useQuery({
+  const { data: browseCompanies = [], error: browseCompaniesError } = useQuery({
     queryKey: ["compare-browse-companies", normalizedFilters],
     queryFn: () =>
       fetchCompanyDirectory({
@@ -340,6 +340,7 @@ const ComparePage = () => {
         limit: 20,
       }),
     staleTime: 1000 * 60 * 5,
+    retry: false,
   });
 
   useEffect(() => {
@@ -348,8 +349,13 @@ const ComparePage = () => {
         setter([]);
         return;
       }
-      const results = await searchIBBICompanies(query, 8, normalizedFilters);
-      setter(results);
+      try {
+        const results = await searchIBBICompanies(query, 8, normalizedFilters);
+        setter(results);
+      } catch (error) {
+        console.error("Compare suggestions could not be loaded.", error);
+        setter([]);
+      }
     };
 
     const leftTimeout = window.setTimeout(() => {
@@ -399,29 +405,35 @@ const ComparePage = () => {
 
   return (
     <div className="min-h-screen bg-[#EEF3F8]">
-      <div className="border-b border-slate-200 bg-white/90 px-4 py-4 backdrop-blur">
+      <div className="sticky top-0 z-30 border-b border-slate-200 bg-white/90 px-4 py-3 backdrop-blur">
         <div className="mx-auto flex max-w-7xl items-center gap-4">
           <Button variant="ghost" size="icon" onClick={() => navigate(-1)}>
             <ArrowLeft className="h-5 w-5" />
           </Button>
-          <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#81BC06]/10 text-[#81BC06]">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#81BC06]/10 text-[#81BC06]">
             <BarChart3 className="h-5 w-5" />
           </div>
           <div>
-            <h1 className="text-xl font-black text-slate-900">Compare Companies</h1>
-            <p className="text-sm text-slate-500">Live enriched comparison with only meaningful rows shown.</p>
+            <h1 className="text-lg font-black text-slate-900">Compare Companies</h1>
+            <p className="text-xs text-slate-500">Live enriched comparison with meaningful rows only.</p>
           </div>
         </div>
       </div>
 
-      <div className="mx-auto max-w-7xl space-y-6 px-4 py-8">
-        <div className="grid gap-4 rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm md:grid-cols-3">
+      <div className="mx-auto max-w-7xl space-y-4 px-4 py-4">
+        {browseCompaniesError instanceof Error && (
+          <div className="rounded-2xl border border-red-200 bg-red-50 px-5 py-3 text-sm text-red-700">
+            Compare list load na thai. {browseCompaniesError.message}
+          </div>
+        )}
+
+        <div className="grid gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:grid-cols-3">
           <FilterSelect label="Status Filter" value={statusFilter} onChange={setStatusFilter} options={compareFilters.status} />
           <FilterSelect label="Type Filter" value={typeFilter} onChange={setTypeFilter} options={compareFilters.type} />
           <FilterSelect label="Source Filter" value={sourceFilter} onChange={setSourceFilter} options={compareFilters.source} />
         </div>
 
-        <div className="grid gap-6 lg:grid-cols-2">
+        <div className="grid gap-4 lg:grid-cols-2">
           <CompanySelectorCard
             title="Company A"
             query={leftQuery}
@@ -462,20 +474,20 @@ const ComparePage = () => {
           />
         </div>
 
-        <div className="overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-sm">
-          <div className="border-b border-slate-100 px-6 py-5">
-            <h2 className="text-sm font-black uppercase tracking-[0.22em] text-slate-700">Comparison Table</h2>
+        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <div className="border-b border-slate-100 px-4 py-3">
+            <h2 className="text-xs font-black uppercase tracking-[0.2em] text-slate-700">Comparison Table</h2>
           </div>
           {comparedCompanies.length < 2 ? (
-            <div className="px-6 py-16 text-center text-sm text-slate-500">Compare karva mate be companies select karo.</div>
+            <div className="px-6 py-10 text-center text-sm text-slate-500">Compare karva mate be companies select karo.</div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[920px] text-sm">
+              <table className="w-full min-w-[920px] text-xs">
                 <thead className="bg-slate-50">
                   <tr>
-                    <th className="px-4 py-4 text-left text-[11px] font-black uppercase tracking-[0.18em] text-slate-400">Parameter</th>
+                    <th className="px-3 py-3 text-left text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">Parameter</th>
                     {comparedCompanies.map((company) => (
-                      <th key={company.id} className="px-4 py-4 text-left text-[11px] font-black uppercase tracking-[0.18em] text-slate-400">
+                      <th key={company.id} className="px-3 py-3 text-left text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">
                         <button
                           type="button"
                           onClick={() => setActiveInsight(buildCompanyInsight(company))}
@@ -490,17 +502,17 @@ const ComparePage = () => {
                 <tbody>
                   {comparisonRows.map((row) => (
                     <tr key={row.label} className="border-t border-slate-100">
-                      <td className="px-4 py-4 font-bold text-slate-700">{row.label}</td>
+                      <td className="px-3 py-2.5 font-bold text-slate-700 whitespace-nowrap">{row.label}</td>
                       {row.values.map((value, index) => {
                         const company = comparedCompanies[index];
                         return (
-                          <td key={`${row.label}-${company.id}`} className="px-4 py-4">
+                          <td key={`${row.label}-${company.id}`} className="px-3 py-2">
                             <button
                               type="button"
                               onClick={() =>
                                 setActiveInsight(buildRowInsight(row.label, row.description, value, company))
                               }
-                              className="w-full rounded-xl px-3 py-2 text-left text-slate-600 transition hover:bg-slate-50 hover:text-slate-900"
+                              className="w-full rounded-lg px-2.5 py-1.5 text-left text-slate-600 transition hover:bg-slate-50 hover:text-slate-900"
                             >
                               {value}
                             </button>
@@ -533,9 +545,9 @@ const FilterSelect = ({
   options: readonly { label: string; value: string }[];
 }) => (
   <div>
-    <p className="mb-2 text-[11px] font-black uppercase tracking-[0.2em] text-slate-500">{label}</p>
+    <p className="mb-1.5 text-[10px] font-black uppercase tracking-[0.18em] text-slate-500">{label}</p>
     <Select value={value} onValueChange={onChange}>
-      <SelectTrigger className="h-11 rounded-xl border-slate-200">
+      <SelectTrigger className="h-9 rounded-lg border-slate-200 text-xs">
         <SelectValue placeholder={label} />
       </SelectTrigger>
       <SelectContent>
@@ -570,40 +582,40 @@ const CompanySelectorCard = ({
   onClear: () => void;
   onOpenInsight: (company: Company) => void;
 }) => (
-  <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
+  <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
     <div className="flex items-center justify-between gap-3">
       <div>
-        <p className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-500">{title}</p>
-        <h2 className="mt-1 text-lg font-black text-slate-900">{selectedCompany?.name || "Select company"}</h2>
+        <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-500">{title}</p>
+        <h2 className="mt-1 text-base font-black text-slate-900">{selectedCompany?.name || "Select company"}</h2>
       </div>
       {selectedCompany && (
-        <Button variant="outline" onClick={onClear} className="rounded-xl border-slate-200">
+        <Button variant="outline" onClick={onClear} className="h-8 rounded-lg border-slate-200 px-3 text-xs">
           Clear
         </Button>
       )}
     </div>
 
-    <div className="relative mt-4">
-      <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-      <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search company name or CIN" className="h-12 rounded-xl border-slate-200 pl-11" />
+    <div className="relative mt-3">
+      <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+      <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search company name or CIN" className="h-10 rounded-lg border-slate-200 pl-9 text-sm" />
     </div>
 
-    <div className="mt-4 space-y-2">
-      {(suggestions.length > 0 ? suggestions : browseCompanies.slice(0, 6)).map((company) => (
+    <div className="mt-3 space-y-1.5">
+      {(suggestions.length > 0 ? suggestions : browseCompanies.slice(0, 8)).map((company) => (
         <button
           key={`${title}-${company.id}`}
           type="button"
           onClick={() => onSelectCompany(company)}
-          className="flex w-full items-start gap-3 rounded-xl border border-slate-100 px-4 py-3 text-left hover:border-[#81BC06] hover:bg-[#81BC06]/5"
+          className="flex w-full items-start gap-2.5 rounded-lg border border-slate-100 px-3 py-2 text-left hover:border-[#81BC06] hover:bg-[#81BC06]/5"
         >
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#81BC06]/10 font-black text-[#81BC06]">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#81BC06]/10 text-xs font-black text-[#81BC06]">
             {company.name[0]}
           </div>
           <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-black uppercase tracking-wide text-slate-900">{company.name}</p>
-            <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] font-medium text-slate-500">
+            <p className="truncate text-xs font-black uppercase tracking-wide text-slate-900">{company.name}</p>
+            <div className="mt-1 flex flex-wrap gap-x-2 gap-y-1 text-[10px] font-medium text-slate-500">
               <span className="inline-flex items-center gap-1">
-                <Building2 className="h-3 w-3" />
+                <Building2 className="h-2.5 w-2.5" />
                 {company.cin || "N/A"}
               </span>
               <span>{company.status}</span>
@@ -614,13 +626,13 @@ const CompanySelectorCard = ({
     </div>
 
     {selectedCompany && (
-      <div className="mt-5 rounded-2xl border border-slate-100 bg-slate-50 p-4 text-sm">
+      <div className="mt-4 rounded-xl border border-slate-100 bg-slate-50 p-3 text-xs">
         <button type="button" onClick={() => onOpenInsight(selectedCompany)} className="w-full text-left">
           <div className="flex items-center gap-2 text-slate-700">
-            <MapPin className="h-4 w-4 text-[#81BC06]" />
+            <MapPin className="h-3.5 w-3.5 text-[#81BC06]" />
             <span className="font-semibold">{selectedCompany.registeredAddress || "N/A"}</span>
           </div>
-          <div className="mt-3 flex flex-wrap gap-4 text-xs text-slate-500">
+          <div className="mt-2 flex flex-wrap gap-3 text-[11px] text-slate-500">
             <span>Type: {selectedCompany.type || "N/A"}</span>
             <span>Source: {selectedCompany.sourceSection || "N/A"}</span>
             <span>Industry: {selectedCompany.industry || "N/A"}</span>
@@ -629,7 +641,7 @@ const CompanySelectorCard = ({
         <button
           type="button"
           onClick={() => window.open(`/company/${selectedCompany.id}`, "_blank", "noopener,noreferrer")}
-          className="mt-4 inline-flex items-center gap-2 text-sm font-bold text-[#81BC06] hover:underline"
+          className="mt-3 inline-flex items-center gap-2 text-xs font-bold text-[#81BC06] hover:underline"
         >
           Open full profile
           <ArrowUpRight className="h-4 w-4" />

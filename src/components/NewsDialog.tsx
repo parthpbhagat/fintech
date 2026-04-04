@@ -25,9 +25,11 @@ const NewsDialog = ({ news, open, onOpenChange }: NewsDialogProps) => {
             <span className="flex items-center gap-1"><Calendar className="w-3 h-3" />{news.date}</span>
           </div>
           <p className="text-sm leading-relaxed text-foreground">{news.summary}</p>
-          <a href={news.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-sm text-primary hover:underline">
-            Read full article <ExternalLink className="w-3 h-3" />
-          </a>
+          {news.url && (
+            <a href={news.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-sm text-primary hover:underline">
+              Read full article <ExternalLink className="w-3 h-3" />
+            </a>
+          )}
         </div>
       </DialogContent>
     </Dialog>

@@ -55,6 +55,8 @@ export interface Company {
   insolvencyProfessionals?: string[];
   announcementHistory?: AnnouncementRecord[];
   sourceSection?: string;
+  sourceUrls?: Record<string, string>;
+  dataSources?: CompanyDataSource[];
   profileUrl?: string;
   lastUpdatedOn?: string;
   rocCode?: string;
@@ -139,6 +141,17 @@ export interface CompanyDocument {
   source?: string;
   url?: string;
   downloadUrl?: string;
+}
+
+export interface CompanyDataSource {
+  id: string;
+  name: string;
+  portalType: string;
+  mode: string;
+  status: string;
+  url?: string;
+  note?: string;
+  checkedAt?: string;
 }
 
 export interface Director {

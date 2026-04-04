@@ -45,7 +45,7 @@ const ensureArray = <T>(value: unknown, path: string): T[] => {
   return value as T[];
 };
 
-const buildQueryString = (params: Record<string, string | number | undefined>) => {
+const buildQueryString = (params: Record<string, string | number | boolean | undefined>) => {
   const searchParams = new URLSearchParams();
   Object.entries(params).forEach(([key, value]) => {
     if (value === undefined) return;

@@ -23,5 +23,17 @@ dist-ssr
 *.sln
 *.sw?
 
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Backend data & secrets
+backend/.env
+backend/data/*.db
+backend/data/*.json
+!backend/data/id_cin_map.json
+!backend/data/company_details_store.json
+
 # Codex temp
 .codex-temp/

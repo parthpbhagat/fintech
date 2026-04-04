@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
   ArrowRight,
@@ -15,13 +15,9 @@ import {
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import {
-  fetchIBBIFeaturedCompanies,
-  fetchIBBIStats,
-  IbbiApiError,
-  searchIBBICompanies,
-} from "@/services/ibbiService";
+import { fetchIBBIFeaturedCompanies, fetchIBBIStats, IbbiApiError, searchIBBICompanies } from "@/services/ibbiService";
 import { StatusBadge } from "@/components/Navbar";
+import { useAuth } from "@/contexts/AuthContext";
 import type { Company } from "@/data/types";
 
 const numberFormatter = new Intl.NumberFormat("en-IN");
@@ -45,6 +41,33 @@ const searchModes = [
     placeholder: "Search by insolvency professional",
   },
 ] as const;
+type SearchModeId = (typeof searchModes)[number]["id"];
+
+const normalizeSearchValue = (value: string | undefined) => value?.trim().toLowerCase() ?? "";
+
+const filterCompaniesBySearchMode = (companies: Company[], mode: SearchModeId, query: string) => {
+  const normalizedQuery = normalizeSearchValue(query);
+  if (!normalizedQuery) return companies;
+
+  return companies.filter((company) => {
+    const companyName = normalizeSearchValue(company.name);
+    const companyCin = normalizeSearchValue(company.cin);
+    const applicantName = normalizeSearchValue(company.applicant_name);
+    const ipName = normalizeSearchValue(company.ip_name);
+    const applicants = company.applicants?.map((entry) => normalizeSearchValue(entry)) ?? [];
+    const professionals = company.insolvencyProfessionals?.map((entry) => normalizeSearchValue(entry)) ?? [];
+
+    if (mode === "applicant") {
+      return applicantName.includes(normalizedQuery) || applicants.some((entry) => entry.includes(normalizedQuery));
+    }
+
+    if (mode === "ip") {
+      return ipName.includes(normalizedQuery) || professionals.some((entry) => entry.includes(normalizedQuery));
+    }
+
+    return companyName.includes(normalizedQuery) || companyCin.includes(normalizedQuery);
+  });
+};
 
 const filterOptions = {
   status: ["All", "Active", "Inactive", "Under CIRP", "Liquidation"],
@@ -54,12 +77,13 @@ const filterOptions = {
 
 const Index = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const [query, setQuery] = useState("");
   const [companies, setCompanies] = useState<Company[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
   const [searchError, setSearchError] = useState("");
-  const [selectedSearchMode, setSelectedSearchMode] = useState(searchModes[0]);
+  const [selectedSearchMode, setSelectedSearchMode] = useState<(typeof searchModes)[number]>(searchModes[0]);
   const [showSearchModeMenu, setShowSearchModeMenu] = useState(false);
   const [suggestions, setSuggestions] = useState<Company[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -67,7 +91,16 @@ const Index = () => {
   const [statusFilter, setStatusFilter] = useState("All");
   const [typeFilter, setTypeFilter] = useState("All");
   const [sourceFilter, setSourceFilter] = useState("All");
+  const { authUser, setIsAuthDialogOpen } = useAuth();
+  const [authPrefill, setAuthPrefill] = useState<{
+    mode?: "login" | "signup" | "forgot";
+    email?: string;
+    otpStep?: boolean;
+    message?: string;
+    error?: string;
+  } | null>(null);
   const searchBoxRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   const {
     data: featuredCompanies = [],
@@ -119,6 +152,47 @@ const Index = () => {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const email = params.get("email")?.trim() || "";
+    const provider = params.get("provider")?.trim() || "";
+    const otpSent = params.get("otp_sent") === "1";
+    const authError = params.get("auth_error")?.trim() || "";
+
+    if (!email && !otpSent && !authError && !provider) return;
+
+    if (otpSent && provider === "google" && email) {
+      setAuthPrefill({
+        mode: "login",
+        email,
+        otpStep: true,
+        message: "Google login successful. Mobile par moklel OTP enter karo.",
+      });
+      setIsAuthDialogOpen(true);
+    } else if (authError === "mobile_required" && email) {
+      setAuthPrefill({
+        mode: "login",
+        email,
+        error: "Aa Google account mate mobile number missing chhe. Pehla manual signup/login thi account setup karo.",
+      });
+      setIsAuthDialogOpen(true);
+    } else if (authError) {
+      const authErrorMessages: Record<string, string> = {
+        google_cancelled: "Google login cancel thayu. Please fari try karo.",
+        google_no_email: "Google account mathi email mali nathi.",
+        google_failed: "Google login complete thai nathi. Please fari try karo.",
+      };
+      setAuthPrefill({
+        mode: "login",
+        error: authErrorMessages[authError] || "Authentication flow ma problem aavi.",
+      });
+      setIsAuthDialogOpen(true);
+    }
+
+    navigate({ pathname: location.pathname }, { replace: true });
+  }, [location.pathname, location.search, navigate]);
+
   useEffect(() => {
     if (normalizedQuery.length < 2) {
       setSuggestions([]);
@@ -134,7 +208,8 @@ const Index = () => {
       try {
         const results = await searchIBBICompanies(normalizedQuery, 8, normalizedFilters);
         if (!isActive) return;
-        setSuggestions(results);
+        const filteredResults = filterCompaniesBySearchMode(results, selectedSearchMode.id, normalizedQuery);
+        setSuggestions(filteredResults);
         setShowSuggestions(true);
       } catch (error) {
         if (!isActive) return;
@@ -152,11 +227,23 @@ const Index = () => {
       isActive = false;
       window.clearTimeout(timeoutId);
     };
-  }, [normalizedFilters, normalizedQuery]);
+  }, [normalizedFilters, normalizedQuery, selectedSearchMode.id]);
 
-  const runSearch = async (rawValue?: string) => {
+  const runSearch = async (rawValue?: string, modeOverride?: SearchModeId) => {
     const nextQuery = (rawValue ?? query).trim();
-    if (nextQuery.length < 2) return;
+    const activeMode = modeOverride ?? selectedSearchMode.id;
+    if (modeOverride) {
+      const overrideMode = searchModes.find((mode) => mode.id === modeOverride);
+      if (overrideMode) {
+        setSelectedSearchMode(overrideMode);
+      }
+    }
+    if (nextQuery.length < 2) {
+      setHasSearched(true);
+      setCompanies([]);
+      setSearchError("Please enter at least 2 characters to search.");
+      return;
+    }
 
     setQuery(nextQuery);
     setIsLoading(true);
@@ -166,7 +253,7 @@ const Index = () => {
 
     try {
       const results = await searchIBBICompanies(nextQuery, 12, normalizedFilters);
-      setCompanies(results);
+      setCompanies(filterCompaniesBySearchMode(results, activeMode, nextQuery));
     } catch (error) {
       setCompanies([]);
       if (error instanceof IbbiApiError) {
@@ -188,12 +275,35 @@ const Index = () => {
     navigate(`/company/${company.id}`);
   };
 
+  const focusSearchInput = () => {
+    searchInputRef.current?.focus();
+    searchInputRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
+  };
+
+  const runLiveSearch = () => {
+    if (query.trim().length >= 2) {
+      void runSearch();
+      return;
+    }
+    navigate("/news");
+  };
+
+  const openSearchMode = (modeId: SearchModeId) => {
+    const mode = searchModes.find((item) => item.id === modeId);
+    if (mode) {
+      setSelectedSearchMode(mode);
+    }
+    focusSearchInput();
+  };
+
+
   const pageError =
     featuredCompaniesError instanceof Error
       ? featuredCompaniesError.message
       : statsError instanceof Error
         ? statsError.message
         : "";
+  const registryWarning = stats?.ibbiStatus === "degraded" ? stats.ibbiError || "Live IBBI feed temporarily unavailable." : "";
 
   const statsCards = [
     {
@@ -214,44 +324,15 @@ const Index = () => {
   ];
 
   return (
-    <div className="min-h-screen bg-white font-sans">
-      <nav className="border-b border-slate-100 py-3 px-6 flex items-center justify-between text-[13px] font-medium text-slate-600">
-        <div className="flex items-center gap-8">
-          <button
-            onClick={() => navigate("/")}
-            className="text-[32px] font-black tracking-tight text-slate-800 leading-none"
-          >
-            fin<span className="text-[#81BC06]">tech</span>
-          </button>
-          <div className="hidden md:flex items-center gap-6 uppercase tracking-wider">
-            <NavItem label="Public Announcements" />
-            <NavItem label="Corporate Debtors" />
-            <NavItem label="Insolvency Professionals" />
-            <NavItem label="Source: IBBI" />
-          </div>
-        </div>
-          <div className="hidden md:flex items-center gap-4">
-            <span className="text-xs font-bold uppercase text-slate-400">Live registry mirror</span>
-            <Button
-              variant="outline"
-              onClick={() => navigate("/compare")}
-              className="rounded-md border-slate-200 px-5 text-sm font-bold uppercase text-slate-700"
-            >
-              Compare
-            </Button>
-            <Button className="bg-[#81BC06] hover:bg-[#6ea105] text-white rounded-md px-5 text-sm font-bold uppercase">
-              Search Now
-            </Button>
-        </div>
-      </nav>
+    <div className="bg-white font-sans">
 
-      <section className="py-20 flex flex-col items-center justify-center bg-[linear-gradient(180deg,#f7f9fd_0%,#ffffff_68%)] px-4">
-        <div className="mb-10 text-center">
-          <p className="text-sm font-bold uppercase tracking-[0.35em] text-[#81BC06]">Fintech Data Hub</p>
-          <h1 className="mt-3 text-5xl md:text-6xl font-black tracking-tight text-slate-900">
+      <section className="py-10 md:py-12 flex flex-col items-center justify-center bg-[linear-gradient(180deg,#f2f6fd_0%,#ffffff_58%)] px-4">
+        <div className="mb-6 text-center">
+          <p className="text-[11px] font-bold uppercase tracking-[0.32em] text-[#81BC06]">Fintech Data Hub</p>
+          <h1 className="mt-2 text-3xl md:text-4xl font-black tracking-tight text-slate-900">
             Search insolvency records
           </h1>
-          <p className="mt-4 max-w-2xl text-base text-slate-500">
+          <p className="mt-2 max-w-2xl text-sm text-slate-500">
             Finanvo-style experience, but powered fully by the live IBBI public announcement registry.
           </p>
         </div>
@@ -262,13 +343,13 @@ const Index = () => {
               event.preventDefault();
               runSearch();
             }}
-            className="flex flex-col md:flex-row items-stretch md:items-center shadow-xl rounded-lg border border-slate-200 bg-white"
+            className="flex flex-col md:flex-row items-stretch md:items-center shadow-lg rounded-lg border border-slate-200 bg-white"
           >
             <div className="relative">
               <button
                 type="button"
                 onClick={() => setShowSearchModeMenu((value) => !value)}
-                className="bg-[#F8F9FA] w-full md:w-[170px] px-6 py-4 border-b md:border-b-0 md:border-r border-slate-200 text-slate-500 flex items-center justify-between gap-2 font-bold text-sm uppercase"
+                className="bg-[#F8F9FA] w-full md:w-[170px] px-5 py-3 border-b md:border-b-0 md:border-r border-slate-200 text-slate-500 flex items-center justify-between gap-2 font-bold text-xs uppercase"
               >
                 {selectedSearchMode.shortLabel}
                 <ChevronDown className={`w-4 h-4 transition-transform ${showSearchModeMenu ? "rotate-180" : ""}`} />
@@ -284,11 +365,10 @@ const Index = () => {
                         setSelectedSearchMode(mode);
                         setShowSearchModeMenu(false);
                       }}
-                      className={`flex w-full items-center px-4 py-3 text-left text-sm font-semibold uppercase tracking-wide transition-colors ${
-                        selectedSearchMode.id === mode.id
-                          ? "bg-[#1f8bff] text-white"
-                          : "text-slate-600 hover:bg-slate-50"
-                      }`}
+                      className={`flex w-full items-center px-4 py-3 text-left text-sm font-semibold uppercase tracking-wide transition-colors ${selectedSearchMode.id === mode.id
+                        ? "bg-[#1f8bff] text-white"
+                        : "text-slate-600 hover:bg-slate-50"
+                        }`}
                     >
                       {mode.label}
                     </button>
@@ -299,6 +379,7 @@ const Index = () => {
 
             <div className="relative flex-1">
               <Input
+                ref={searchInputRef}
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
                 onFocus={() => {
@@ -307,7 +388,7 @@ const Index = () => {
                   }
                 }}
                 placeholder={selectedSearchMode.placeholder}
-                className="border-none h-14 text-base md:text-lg focus-visible:ring-0 px-6 font-medium"
+                className="border-none h-12 text-sm md:text-base focus-visible:ring-0 px-4 md:px-5 font-medium"
               />
 
               {showSuggestions && normalizedQuery.length >= 2 && (
@@ -351,34 +432,37 @@ const Index = () => {
 
             <button
               type="submit"
-              className="bg-[#81BC06] text-white px-8 py-4 font-bold uppercase text-sm hover:bg-[#6ea105] transition-colors"
+              className="bg-[#81BC06] text-white px-6 py-3 font-bold uppercase text-xs hover:bg-[#6ea105] transition-colors"
             >
               {isLoading ? "Searching..." : "Search"}
             </button>
             <button
               type="button"
-              onClick={() => runSearch()}
-              className="bg-[#2D333F] text-white px-6 py-4 font-bold uppercase text-xs flex items-center justify-center gap-1.5 min-w-max rounded-b-lg md:rounded-b-none md:rounded-r-lg"
+              onClick={runLiveSearch}
+              className="bg-[#2D333F] text-white px-5 py-3 font-bold uppercase text-[11px] flex items-center justify-center gap-1.5 min-w-max rounded-b-lg md:rounded-b-none md:rounded-r-lg"
             >
               <Search className="w-3.5 h-3.5" /> Live IBBI
             </button>
           </form>
         </div>
 
-        <div className="mt-6 flex flex-wrap justify-center gap-2 max-w-5xl">
-          <span className="text-sm font-bold text-slate-800 uppercase mt-1 mr-2">Try recent:</span>
+        <div className="mt-4 flex flex-wrap justify-center gap-2 max-w-5xl">
+          <span className="text-xs font-bold text-slate-800 uppercase mt-1 mr-2">Try recent:</span>
           {quickSearches.map((company) => (
             <button
               key={company.id}
-              onClick={() => runSearch(company.name)}
-              className="px-3 py-1 bg-white border border-slate-200 rounded-full text-[11px] text-slate-500 font-medium hover:border-[#81BC06] transition-colors"
+              onClick={() => {
+                setSelectedSearchMode(searchModes[0]);
+                runSearch(company.name, "company");
+              }}
+              className="px-3 py-1 bg-white border border-slate-200 rounded-full text-[10px] text-slate-500 font-medium hover:border-[#81BC06] transition-colors"
             >
               {company.name}
             </button>
           ))}
         </div>
 
-        <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
+        <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
           <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">
             <SlidersHorizontal className="w-3.5 h-3.5 text-[#81BC06]" />
             Filters
@@ -404,7 +488,7 @@ const Index = () => {
           <Button
             variant="outline"
             onClick={() => navigate("/compare")}
-            className="rounded-full border-slate-200 px-5 text-xs font-bold uppercase"
+            className="rounded-full border-slate-200 px-4 text-[11px] font-bold uppercase"
           >
             Compare Two Companies
           </Button>
@@ -424,16 +508,23 @@ const Index = () => {
         </div>
       </div>
 
-      <section className="bg-[#F8F9FA] py-12 border-b border-slate-100">
-        <div className="container mx-auto px-4 grid grid-cols-2 md:grid-cols-4 gap-8">
-          <ActionItem icon={<Building2 className="w-10 h-10 text-slate-500" />} label="Check Corporate Debtor" />
-          <ActionItem icon={<Landmark className="w-10 h-10 text-slate-500" />} label="Track Applicant" />
-          <ActionItem icon={<UserRound className="w-10 h-10 text-slate-500" />} label="Review IP Details" />
-          <ActionItem icon={<ShieldCheck className="w-10 h-10 text-slate-500" />} label="Follow Insolvency Timeline" />
+      <section className="bg-[#F8F9FA] py-6 border-b border-slate-100">
+        <div className="container mx-auto px-4 grid grid-cols-2 md:grid-cols-4 gap-5">
+          <ActionItem icon={<Building2 className="w-10 h-10 text-slate-500" />} label="Check Corporate Debtor" onClick={() => openSearchMode("company")} />
+          <ActionItem icon={<Landmark className="w-10 h-10 text-slate-500" />} label="Track Applicant" onClick={() => openSearchMode("applicant")} />
+          <ActionItem icon={<UserRound className="w-10 h-10 text-slate-500" />} label="Review IP Details" onClick={() => openSearchMode("ip")} />
+          <ActionItem icon={<ShieldCheck className="w-10 h-10 text-slate-500" />} label="Follow Insolvency Timeline" onClick={() => navigate("/news")} />
         </div>
       </section>
 
-      <section className="container mx-auto px-4 py-12">
+      <section className="container mx-auto px-4 py-8">
+        {registryWarning && !pageError && (
+          <div className="max-w-5xl mx-auto mb-6 rounded-2xl border border-amber-200 bg-amber-50 px-6 py-4 text-amber-800">
+            <p className="font-bold">Live IBBI feed temporarily degraded</p>
+            <p className="text-sm mt-1">{registryWarning}</p>
+          </div>
+        )}
+
         {pageError && (
           <div className="max-w-5xl mx-auto mb-6 rounded-2xl border border-red-200 bg-red-50 px-6 py-4 text-red-700">
             <p className="font-bold">Backend connection issue</p>
@@ -463,7 +554,7 @@ const Index = () => {
                 {companies.length} live match{companies.length === 1 ? "" : "es"} from current filters
               </p>
             </div>
-            <div className="grid gap-4">
+            <div className="grid gap-3 lg:grid-cols-2">
               {companies.map((company) => (
                 <CompanyCard key={company.id} company={company} onClick={() => navigate(`/company/${company.id}`)} />
               ))}
@@ -486,8 +577,8 @@ const Index = () => {
               <h2 className="text-xl font-bold text-slate-800 border-l-4 border-[#81BC06] pl-4">Latest Registry Activity</h2>
               <p className="text-sm text-slate-500">Fresh companies from the current filtered dataset</p>
             </div>
-            <div className="grid gap-4">
-              {filteredFeaturedCompanies.slice(0, 6).map((company) => (
+            <div className="grid gap-3 lg:grid-cols-2">
+              {filteredFeaturedCompanies.slice(0, 10).map((company) => (
                 <CompanyCard key={company.id} company={company} onClick={() => navigate(`/company/${company.id}`)} />
               ))}
             </div>
@@ -495,32 +586,41 @@ const Index = () => {
         )}
       </section>
 
-      <footer className="bg-white pt-16 pb-3 border-t border-slate-100">
+      <footer className="bg-white pt-10 pb-3 border-t border-slate-100">
         <div className="container mx-auto px-6">
-          <div className="flex flex-col md:flex-row justify-between gap-12">
+          <div className="flex flex-col md:flex-row justify-between gap-8">
             <div className="max-w-md text-slate-500 text-sm leading-relaxed">
+              {/* Logo Section */}
               <p className="text-2xl font-black tracking-tight text-slate-900">
                 fin<span className="text-[#81BC06]">tech</span>
               </p>
-              <p className="font-bold mb-1 mt-5">Explore live IBBI insolvency announcements</p>
-              <p className="mb-6">
-                This dashboard mirrors corporate debtor activity from the official IBBI public announcement export.
-              </p>
-              <div className="flex gap-4 text-xs font-bold text-slate-400">
+
+              {/* Address Section - Replace the text below with your actual address */}
+              <div className="mt-4 text-slate-600 text-xs md:text-sm">
+                <p className="font-bold text-slate-800">Our Address:</p>
+                <p>Fintech Soluction Pvt Ltd, Office No 1815,</p>
+                <p>Ambali Bopal Road, Ahemdabad, gujrat - 380058</p>
+                <p className="mt-2">Email: fintechpvtltd@gmail.com </p>
+              </div>
+
+              <div className="flex gap-4 mt-4 text-[11px] font-bold text-slate-400">
                 <span>Source: IBBI</span>
                 <span>Live Search</span>
                 <span>Registry Snapshot</span>
               </div>
             </div>
 
-            <div className="text-right text-xs text-slate-500">
+            <div className="text-right text-[11px] md:text-xs text-slate-500">
               <p className="font-bold text-slate-800 mb-1">Data Coverage</p>
               <p>Announcement type, dates, CIN, applicant, IP name and IP address</p>
-              <p className="mt-2">Last synced: {stats?.lastSyncedAt ? new Date(stats.lastSyncedAt).toLocaleString() : "Pending"}</p>
+              <p className="mt-2">
+                Last synced: {stats?.lastSyncedAt ? new Date(stats.lastSyncedAt).toLocaleString() : "Pending"}
+              </p>
             </div>
           </div>
         </div>
-        <div className="mt-12 bg-[#81BC06]/10 text-slate-600 py-3 px-6 flex flex-col md:flex-row justify-between gap-3 text-xs font-medium">
+
+        <div className="mt-8 bg-[#81BC06]/10 text-slate-600 py-2.5 px-6 flex flex-col md:flex-row justify-between gap-2 text-[11px] font-medium">
           <p>Powered by the official IBBI public announcement export</p>
           <p className="font-bold text-slate-800">Search, inspect, and review insolvency timelines faster</p>
         </div>
@@ -529,11 +629,7 @@ const Index = () => {
   );
 };
 
-const NavItem = ({ label }: { label: string }) => (
-  <button className="flex items-center gap-1 hover:text-[#81BC06] transition-colors uppercase font-bold">
-    {label}
-  </button>
-);
+export default Index;
 
 const FilterPill = ({
   label,
@@ -546,8 +642,8 @@ const FilterPill = ({
   options: readonly string[];
   onChange: (value: string) => void;
 }) => (
-  <label className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600">
-    <span className="uppercase text-[10px] tracking-[0.18em] text-slate-400">{label}</span>
+  <label className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-600">
+    <span className="uppercase text-[9px] tracking-[0.16em] text-slate-400">{label}</span>
     <select
       value={value}
       onChange={(event) => onChange(event.target.value)}
@@ -562,38 +658,36 @@ const FilterPill = ({
   </label>
 );
 
-const ActionItem = ({ icon, label }: { icon: React.ReactNode; label: string }) => (
-  <button className="flex flex-col items-center text-center group">
-    <div className="mb-4 transition-transform group-hover:scale-110">{icon}</div>
-    <p className="text-[13px] font-bold text-slate-600 uppercase tracking-tight">{label}</p>
+const ActionItem = ({ icon, label, onClick }: { icon: React.ReactNode; label: string; onClick: () => void }) => (
+  <button onClick={onClick} className="flex flex-col items-center text-center group">
+    <div className="mb-2 transition-transform group-hover:scale-110">{icon}</div>
+    <p className="text-[11px] font-bold text-slate-600 uppercase tracking-tight">{label}</p>
   </button>
 );
 
 const CompanyCard = ({ company, onClick }: { company: Company; onClick: () => void }) => (
   <button
     onClick={onClick}
-    className="bg-white p-5 rounded-xl border border-slate-100 shadow-sm flex items-center gap-5 w-full text-left hover:border-[#81BC06] hover:shadow-md transition-all group"
+    className="bg-white p-3 rounded-xl border border-slate-100 shadow-sm flex items-start gap-3 w-full text-left hover:border-[#81BC06] hover:shadow-md transition-all group"
   >
-    <div className="w-14 h-14 rounded-full bg-slate-50 flex items-center justify-center text-xl font-bold text-slate-400 group-hover:bg-[#81BC06] group-hover:text-white transition-colors">
+    <div className="w-10 h-10 rounded-full bg-slate-50 flex items-center justify-center text-sm font-bold text-slate-400 group-hover:bg-[#81BC06] group-hover:text-white transition-colors">
       {company.name[0]}
     </div>
     <div className="flex-1">
-      <div className="flex flex-wrap items-center gap-3 mb-1">
-        <h3 className="font-bold text-slate-800">{company.name}</h3>
+      <div className="flex flex-wrap items-center gap-2 mb-0.5">
+        <h3 className="font-bold text-[13px] text-slate-800 leading-tight">{company.name}</h3>
         <StatusBadge status={company.status} />
       </div>
-      <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-slate-500 font-medium">
+      <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-slate-500 font-medium">
         <span className="flex items-center gap-1">
-          <Calendar className="w-3.5 h-3.5" />
+          <Calendar className="w-3 h-3" />
           Latest filing: {company.announcementDate || "N/A"}
         </span>
         <span>Applicant: {company.applicant_name || "N/A"}</span>
         <span>IP: {company.ip_name || "N/A"}</span>
       </div>
-      <p className="mt-2 text-xs uppercase tracking-wide text-slate-400">{company.announcementType || company.category}</p>
+      <p className="mt-1 text-[10px] uppercase tracking-wide text-slate-400">{company.announcementType || company.category}</p>
     </div>
-    <ArrowRight className="w-5 h-5 text-slate-300 group-hover:text-[#81BC06] transition-colors" />
+    <ArrowRight className="mt-2 w-4 h-4 text-slate-300 group-hover:text-[#81BC06] transition-colors" />
   </button>
 );
-
-export default Index;
