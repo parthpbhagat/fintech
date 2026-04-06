@@ -23,6 +23,7 @@ import {
 import { API_BASE_URL, fetchIBBICompanyDetails } from "@/services/ibbiService";
 import DataInsightSheet, { type InsightContent } from "@/components/DataInsightSheet";
 import { StatusBadge } from "@/components/Navbar";
+import IBBICorporateProcess from "@/components/IBBICorporateProcess";
 import type { AnnouncementRecord, Charge, CompanyAddress, CompanyDataSource, CompanyDocument, Director, NewsItem } from "@/data/types";
 
 const currencyFormatter = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 });
@@ -102,7 +103,6 @@ const CompanyDetail = () => {
   if (company.mapLocation || (company.registeredAddress && company.registeredAddress !== "N/A")) tabs.push("Map");
   if (company.directors && company.directors.length > 0) tabs.push("Directors");
   if (company.charges && company.charges.length > 0) tabs.push("Charges");
-  if (company.documents && company.documents.length > 0) tabs.push("Documents");
   if (company.news && company.news.length > 0) tabs.push("News");
   if (hasIBBIData) tabs.push("IBBI");
   tabs.push("Source");
@@ -310,28 +310,6 @@ const CompanyDetail = () => {
                       />
                     </div>
                   )}
-
-                  {company.documents && company.documents.length > 0 && (
-                    <div>
-                      <SectionTitle title="Documents & Downloads" />
-                      <DocumentsList
-                        documents={company.documents}
-                        onInspect={(document) =>
-                          setActiveInsight({
-                            title: document.fileName,
-                            subtitle: document.category,
-                            description: "Document or source link available for this company.",
-                            facts: [
-                              { label: "Source", value: document.source || "N/A" },
-                              { label: "Date", value: document.dateOfFiling || "N/A" },
-                              { label: "Open URL", value: document.url || "N/A" },
-                              { label: "Download URL", value: document.downloadUrl || "N/A" },
-                            ],
-                          })
-                        }
-                      />
-                    </div>
-                  )}
                 </div>
               )}
 
@@ -410,27 +388,6 @@ const CompanyDetail = () => {
                 </div>
               )}
 
-              {activeTab === "Documents" && (
-                <div>
-                  <SectionTitle title="Documents & Downloads" />
-                  <DocumentsList
-                    documents={company.documents || []}
-                    onInspect={(document) =>
-                      setActiveInsight({
-                        title: document.fileName,
-                        subtitle: document.category,
-                        description: "Document or source link available for this company.",
-                        facts: [
-                          { label: "Source", value: document.source || "N/A" },
-                          { label: "Date", value: document.dateOfFiling || "N/A" },
-                          { label: "Open URL", value: document.url || "N/A" },
-                          { label: "Download URL", value: document.downloadUrl || "N/A" },
-                        ],
-                      })
-                    }
-                  />
-                </div>
-              )}
 
               {activeTab === "News" && (
                 <div>
@@ -572,6 +529,13 @@ const CompanyDetail = () => {
             </div>
           </div>
         </div>
+        
+        {/* IBBI Dedicated Replica Section */}
+        {hasIBBIData && (
+          <div className="mt-8">
+            <IBBICorporateProcess company={company} />
+          </div>
+        )}
       </div>
 
       <footer className="mt-8 py-6 bg-white border-t border-slate-100 flex flex-col items-center gap-2">

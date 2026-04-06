@@ -48,7 +48,30 @@ const hasMeaningfulText = (value: string) => {
   return normalized !== "" && normalized !== "N/A" && normalized !== "NA" && normalized !== "0";
 };
 
+const formatCount = (value: number) => String(value || 0);
+
+const buildJoinedAddress = (company: Company) =>
+  [company.registeredAddress, company.businessAddress].filter((value, index, items) => hasMeaningfulText(value || "") && items.indexOf(value) === index).join(" | ") || "N/A";
+
 const compareRowConfigs: CompareRowConfig[] = [
+  {
+    label: "CIN / LLPIN",
+    getValue: (company) => company.cin || "N/A",
+    shouldShow: (companies) => companies.some((company) => hasMeaningfulText(company.cin || "")),
+    description: "Primary company identifier from registry and enriched source profiles.",
+  },
+  {
+    label: "PAN",
+    getValue: (company) => company.pan || "N/A",
+    shouldShow: (companies) => companies.some((company) => hasMeaningfulText(company.pan || "")),
+    description: "Permanent Account Number when it is available in the public company profile data.",
+  },
+  {
+    label: "Registration Number",
+    getValue: (company) => company.registrationNumber || "N/A",
+    shouldShow: (companies) => companies.some((company) => hasMeaningfulText(company.registrationNumber || "")),
+    description: "Registration number captured from public registry mirrors.",
+  },
   {
     label: "Status",
     getValue: (company) => company.status || "",
@@ -68,6 +91,18 @@ const compareRowConfigs: CompareRowConfig[] = [
     description: "Entity category or latest insolvency/registry classification.",
   },
   {
+    label: "Subcategory",
+    getValue: (company) => company.companySubcategory || "N/A",
+    shouldShow: (companies) => companies.some((company) => hasMeaningfulText(company.companySubcategory || "")),
+    description: "Company subcategory carried from the enriched public profile.",
+  },
+  {
+    label: "Listing Status",
+    getValue: (company) => company.listingStatus || "N/A",
+    shouldShow: (companies) => companies.some((company) => hasMeaningfulText(company.listingStatus || "")),
+    description: "Listed or unlisted status when available in the source data.",
+  },
+  {
     label: "Incorporation",
     getValue: (company) => company.incorporationDate || "N/A",
     shouldShow: (companies) => companies.some((company) => hasMeaningfulText(company.incorporationDate || "")),
@@ -84,6 +119,12 @@ const compareRowConfigs: CompareRowConfig[] = [
     getValue: (company) => company.industry || "N/A",
     shouldShow: (companies) => companies.some((company) => hasMeaningfulText(company.industry || "")),
     description: "Industry or activity description collected from public company profiles.",
+  },
+  {
+    label: "NIC Code",
+    getValue: (company) => company.nicCode || "N/A",
+    shouldShow: (companies) => companies.some((company) => hasMeaningfulText(company.nicCode || "")),
+    description: "NIC code fetched from the enriched company profile, when available.",
   },
   {
     label: "Authorised Capital",
@@ -111,31 +152,68 @@ const compareRowConfigs: CompareRowConfig[] = [
   },
   {
     label: "Directors",
-    getValue: (company) => String(company.directors.length),
+    getValue: (company) => formatCount(company.directors.length),
     shouldShow: (companies) => companies.some((company) => company.directors.length > 0),
     description: "Total active directors or designated partners mapped from public sources.",
   },
   {
     label: "Charges",
-    getValue: (company) => String(company.charges.length),
+    getValue: (company) => formatCount(company.charges.length),
     shouldShow: (companies) => companies.some((company) => company.charges.length > 0),
     description: "Total open or satisfied charge entries currently available.",
   },
   {
+    label: "Email",
+    getValue: (company) => company.email || "N/A",
+    shouldShow: (companies) => companies.some((company) => hasMeaningfulText(company.email || "")),
+    description: "Public email captured from the enriched company profile.",
+  },
+  {
+    label: "Phone",
+    getValue: (company) => company.phone || "N/A",
+    shouldShow: (companies) => companies.some((company) => hasMeaningfulText(company.phone || "")),
+    description: "Public phone number captured from the enriched company profile.",
+  },
+  {
+    label: "Website",
+    getValue: (company) => company.website || "N/A",
+    shouldShow: (companies) => companies.some((company) => hasMeaningfulText(company.website || "")),
+    description: "Official company website when available.",
+  },
+  {
+    label: "GSTIN",
+    getValue: (company) => company.gstin || "N/A",
+    shouldShow: (companies) => companies.some((company) => hasMeaningfulText(company.gstin || "")),
+    description: "GSTIN from the enriched company profile, when available.",
+  },
+  {
     label: "Address",
-    getValue: (company) => company.registeredAddress || "N/A",
-    shouldShow: (companies) => companies.some((company) => hasMeaningfulText(company.registeredAddress || "")),
-    description: "Registered address from the strongest available public source.",
+    getValue: (company) => buildJoinedAddress(company),
+    shouldShow: (companies) =>
+      companies.some((company) => hasMeaningfulText(company.registeredAddress || "") || hasMeaningfulText(company.businessAddress || "")),
+    description: "Registered and business address details from the strongest available public source.",
+  },
+  {
+    label: "Filing Status",
+    getValue: (company) => company.filingStatus || "N/A",
+    shouldShow: (companies) => companies.some((company) => hasMeaningfulText(company.filingStatus || "")),
+    description: "Recent filing status mapped from public company profile sources.",
+  },
+  {
+    label: "Active Compliance",
+    getValue: (company) => company.activeCompliance || "N/A",
+    shouldShow: (companies) => companies.some((company) => hasMeaningfulText(company.activeCompliance || "")),
+    description: "Compliance flag captured from public profile data.",
   },
   {
     label: "Documents",
-    getValue: (company) => String(company.documents.length),
+    getValue: (company) => formatCount(company.documents.length),
     shouldShow: (companies) => companies.some((company) => company.documents.length > 0),
     description: "Generated and source-linked documents currently available for download/open.",
   },
   {
     label: "Latest Updates",
-    getValue: (company) => String(company.news.length),
+    getValue: (company) => formatCount(company.news.length),
     shouldShow: (companies) => companies.some((company) => company.news.length > 0),
     description: "Latest public news mentions and registry updates currently mapped.",
   },
@@ -152,15 +230,54 @@ const buildCompanyInsight = (company: Company): InsightContent => ({
   subtitle: company.cin || "N/A",
   description: company.overview,
   facts: [
+    { label: "PAN", value: company.pan || "N/A" },
     { label: "Status", value: company.status || "N/A" },
     { label: "Type", value: company.type || "N/A" },
+    { label: "Category", value: company.category || "N/A" },
+    { label: "Subcategory", value: company.companySubcategory || "N/A" },
+    { label: "Registration No.", value: company.registrationNumber || "N/A" },
     { label: "ROC", value: company.rocCode || "N/A" },
     { label: "Industry", value: company.industry || "N/A" },
-    { label: "Address", value: company.registeredAddress || "N/A" },
-    { label: "Directors", value: String(company.directors.length) },
-    { label: "Charges", value: String(company.charges.length) },
-    { label: "Documents", value: String(company.documents.length) },
-    { label: "Latest Updates", value: String(company.news.length) },
+    { label: "Email", value: company.email || "N/A" },
+    { label: "Phone", value: company.phone || "N/A" },
+    { label: "Website", value: company.website || "N/A" },
+    { label: "GSTIN", value: company.gstin || "N/A" },
+    { label: "Registered Address", value: company.registeredAddress || "N/A" },
+    { label: "Business Address", value: company.businessAddress || "N/A" },
+    { label: "Directors", value: formatCount(company.directors.length) },
+    { label: "Charges", value: formatCount(company.charges.length) },
+    { label: "Documents", value: formatCount(company.documents.length) },
+    { label: "Latest Updates", value: formatCount(company.news.length) },
+  ],
+  sections: [
+    {
+      title: "Master Detail",
+      facts: [
+        { label: "CIN / LLPIN", value: company.cin || "N/A" },
+        { label: "PAN", value: company.pan || "N/A" },
+        { label: "Registration Number", value: company.registrationNumber || "N/A" },
+        { label: "Incorporation Date", value: company.incorporationDate || "N/A" },
+        { label: "Listing Status", value: company.listingStatus || "N/A" },
+        { label: "NIC Code", value: company.nicCode || "N/A" },
+        { label: "Filing Status", value: company.filingStatus || "N/A" },
+        { label: "Active Compliance", value: company.activeCompliance || "N/A" },
+      ],
+    },
+    {
+      title: "Contact Detail",
+      facts: [
+        { label: "Email", value: company.email || "N/A" },
+        { label: "Phone", value: company.phone || "N/A" },
+        { label: "Website", value: company.website || "N/A" },
+        { label: "Registered Address", value: company.registeredAddress || "N/A" },
+        { label: "Business Address", value: company.businessAddress || "N/A" },
+      ],
+    },
+    ...(company.directors.length > 0 ? buildDirectorSections(company.directors) : []),
+    ...(company.addresses?.length ? buildAddressSections(company.addresses) : []),
+    ...(company.charges.length > 0 ? buildChargeSections(company.charges) : []),
+    ...(company.documents.length > 0 ? buildDocumentSections(company.documents) : []),
+    ...(company.news.length > 0 ? buildNewsSections(company.news) : []),
   ],
 });
 
@@ -175,6 +292,11 @@ const buildDirectorSections = (directors: Director[]): InsightSection[] =>
       { label: "Directorships", value: director.totalDirectorships || "N/A" },
       { label: "Disqualified 164", value: director.disqualified164 || "N/A" },
       { label: "DIN Deactivated", value: director.dinDeactivated || "N/A" },
+      { label: "Email", value: director.contactEmail || "N/A" },
+      { label: "Phone", value: director.contactPhone || "N/A" },
+      { label: "Address", value: director.contactAddress || "N/A" },
+      { label: "Nationality", value: director.nationality || "N/A" },
+      { label: "Occupation", value: director.occupation || "N/A" },
       { label: "Profile Link", value: director.profileUrl || "N/A" },
     ],
   }));
@@ -279,9 +401,13 @@ const buildRowInsight = (rowLabel: string, description: string, value: string, c
     case "Address":
       return {
         title: `${rowLabel} - ${company.name}`,
-        subtitle: company.registeredAddress || "N/A",
+        subtitle: buildJoinedAddress(company),
         description,
-        facts: baseFacts,
+        facts: [
+          ...baseFacts,
+          { label: "Registered Address", value: company.registeredAddress || "N/A" },
+          { label: "Business Address", value: company.businessAddress || "N/A" },
+        ],
         sections: buildAddressSections(company.addresses || []),
       };
     case "Authorised Capital":
@@ -295,6 +421,33 @@ const buildRowInsight = (rowLabel: string, description: string, value: string, c
           { label: "Last AGM", value: company.lastAGMDate || "N/A" },
           { label: "Last B/S", value: company.lastBSDate || "N/A" },
           { label: "Category", value: company.category || "N/A" },
+        ],
+      };
+    case "CIN / LLPIN":
+    case "PAN":
+    case "Registration Number":
+    case "Email":
+    case "Phone":
+    case "Website":
+    case "GSTIN":
+    case "Subcategory":
+    case "Listing Status":
+    case "NIC Code":
+    case "Filing Status":
+    case "Active Compliance":
+      return {
+        title: `${rowLabel} - ${company.name}`,
+        subtitle: value,
+        description,
+        facts: [
+          ...baseFacts,
+          { label: rowLabel, value },
+          { label: "PAN", value: company.pan || "N/A" },
+          { label: "GSTIN", value: company.gstin || "N/A" },
+          { label: "Email", value: company.email || "N/A" },
+          { label: "Phone", value: company.phone || "N/A" },
+          { label: "Website", value: company.website || "N/A" },
+          { label: "Registered Address", value: company.registeredAddress || "N/A" },
         ],
       };
     default:

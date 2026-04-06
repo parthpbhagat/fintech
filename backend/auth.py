@@ -48,7 +48,7 @@ from pydantic import BaseModel
 # ─── Config ─────────────────────────────────────────────────────────────────
 
 _BASE_DIR = Path(__file__).resolve().parent
-AUTH_DB_PATH = _BASE_DIR / "data" / "users.db"
+AUTH_DB_PATH = _BASE_DIR.parent / "database" / "users.db"
 AUTH_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 JWT_SECRET: str = os.getenv(

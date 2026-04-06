@@ -27,7 +27,7 @@ IBBI_CLAIMS_SEARCH_URL = "https://ibbi.gov.in/claims/claim-process"
 IBBI_CLAIMS_VERSION_URL = "https://ibbi.gov.in/claims/version-details"
 IBBI_CLAIMS_DETAIL_URL = "https://ibbi.gov.in/claims/frontClaimDetails"
 BASE_DIR = Path(__file__).resolve().parent
-COMPANY_DETAIL_STORE_PATH = BASE_DIR / "data" / "company_details_store.json"
+COMPANY_DETAIL_STORE_PATH = BASE_DIR.parent / "database" / "company_details_store.json"
 CACHE_TTL_SECONDS = 5 * 60
 PROFILE_CACHE_TTL_SECONDS = 30 * 60
 REQUEST_TIMEOUT_SECONDS = 45
@@ -734,6 +734,7 @@ def build_company_documents(company: dict[str, Any]) -> list[dict[str, Any]]:
             "dateOfFiling": normalize_display_date(company.get("lastUpdatedOn") or company.get("announcementDate") or datetime.utcnow().strftime("%Y-%m-%d")),
             "category": "Profile Snapshot",
             "source": "Internal Export",
+            "fileType": "json",
             "url": f"/company/{quote(company_id)}/documents/profile.json",
             "downloadUrl": f"/company/{quote(company_id)}/documents/profile.json",
         },
@@ -744,6 +745,7 @@ def build_company_documents(company: dict[str, Any]) -> list[dict[str, Any]]:
             "dateOfFiling": normalize_display_date(company.get("lastUpdatedOn") or company.get("announcementDate") or datetime.utcnow().strftime("%Y-%m-%d")),
             "category": "Company Summary",
             "source": "Internal Export",
+            "fileType": "txt",
             "url": f"/company/{quote(company_id)}/documents/summary.txt",
             "downloadUrl": f"/company/{quote(company_id)}/documents/summary.txt",
         },
@@ -758,6 +760,7 @@ def build_company_documents(company: dict[str, Any]) -> list[dict[str, Any]]:
                 "dateOfFiling": normalize_display_date(company.get("announcementDate") or company.get("lastUpdatedOn") or "N/A"),
                 "category": "IBBI Registry Source",
                 "source": "IBBI",
+                "fileType": "html",
                 "url": company["registryUrl"],
                 "downloadUrl": company["registryUrl"],
             }
@@ -779,6 +782,7 @@ def build_company_documents(company: dict[str, Any]) -> list[dict[str, Any]]:
                 "dateOfFiling": normalize_display_date(company.get("announcementDate") or company.get("lastUpdatedOn") or "N/A"),
                 "category": "Source PDF",
                 "source": "IBBI Public Announcement",
+                "fileType": "pdf",
                 "url": pdf_url,
                 "downloadUrl": pdf_url,
             }
@@ -789,6 +793,7 @@ def build_company_documents(company: dict[str, Any]) -> list[dict[str, Any]]:
         key = f"{document['formId']}|{clean_text(document.get('url', ''))}"
         deduped.setdefault(key, document)
     return list(deduped.values())
+
 
 
 def build_company_summary_text(company: dict[str, Any]) -> str:

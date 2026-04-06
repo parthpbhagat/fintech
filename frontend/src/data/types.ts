@@ -139,9 +139,11 @@ export interface CompanyDocument {
   dateOfFiling: string;
   category: string;
   source?: string;
+  fileType?: "pdf" | "json" | "txt" | "html";
   url?: string;
   downloadUrl?: string;
 }
+
 
 export interface CompanyDataSource {
   id: string;
