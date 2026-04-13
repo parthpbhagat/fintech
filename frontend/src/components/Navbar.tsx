@@ -37,8 +37,7 @@ const Navbar = () => {
         </button>
         
         <div className="hidden md:flex items-center gap-6">
-          <NavItem label="Announcements" onClick={() => navigate("/news")} />
-          <NavItem label="Mirror" onClick={() => window.open("https://ibbi.gov.in/en/public-announcement", "_blank", "noopener,noreferrer")} />
+          <NavItem label="IBBI Mirror" onClick={() => window.open("https://ibbi.gov.in/en/public-announcement", "_blank", "noopener,noreferrer")} />
         </div>
       </div>
 

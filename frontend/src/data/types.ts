@@ -35,7 +35,6 @@ export interface Company {
   ownership: OwnershipData[];
   compliance: ComplianceRecord[];
   documents: CompanyDocument[];
-  directors: Director[];
   news: NewsItem[];
   trendData: number[];
   ip_name?: string;
@@ -72,6 +71,9 @@ export interface Company {
   snapshotSyncedAt?: string;
   profileCachedAt?: string;
   profileCacheTtlSeconds?: number;
+  corporateProcesses?: Record<string, CorporateProcessSection>;
+  directors?: Director[];
+  enrichmentInProgress?: boolean;
 }
 
 export interface AnnouncementRecord {
@@ -89,6 +91,23 @@ export interface AnnouncementRecord {
   remarks: string;
   status: Company["status"];
   registryUrl: string;
+  documentUrl?: string;
+}
+
+export interface CorporateProcessRow {
+  id: string;
+  label?: string;
+  value?: string;
+  values?: Record<string, string>;
+  links?: Record<string, string>;
+}
+
+export interface CorporateProcessSection {
+  id: string;
+  title: string;
+  url?: string;
+  headers: string[];
+  rows: CorporateProcessRow[];
 }
 
 export interface FinancialMetric {
@@ -105,6 +124,7 @@ export interface Charge {
   modificationDate: string;
   assetsSecured?: string;
   outstandingYears?: string;
+  details?: string;
 }
 
 export interface FinancialYear {
@@ -156,25 +176,7 @@ export interface CompanyDataSource {
   checkedAt?: string;
 }
 
-export interface Director {
-  din: string;
-  name: string;
-  designation: string;
-  appointmentDate: string;
-  status: "Active" | "Resigned" | "Disqualified";
-  totalDirectorships?: string;
-  disqualified164?: string;
-  dinDeactivated?: string;
-  profileUrl?: string;
-  contactEmail?: string;
-  contactPhone?: string;
-  contactWebsite?: string;
-  contactAddress?: string;
-  contactSource?: string;
-  contactNote?: string;
-  nationality?: string;
-  occupation?: string;
-}
+
 
 export interface CompanyAddress {
   type: string;
@@ -209,6 +211,7 @@ export interface NewsItem {
   summary: string;
   url: string;
   companyId: string;
+  isRelated?: boolean;
 }
 
 export interface DashboardStats {
@@ -229,4 +232,23 @@ export interface CompanyFilters {
   source?: string;
   limit?: number;
   fresh?: number | boolean;
+}
+
+export interface Director {
+  din: string;
+  name: string;
+  designation: string;
+  date_of_appointment: string;
+  date_of_cessation?: string;
+  is_active: boolean;
+  din_details?: DinDetails;
+}
+
+export interface DinDetails {
+  din: string;
+  name: string;
+  father_name: string;
+  date_of_birth: string;
+  nationality: string;
+  address: string;
 }

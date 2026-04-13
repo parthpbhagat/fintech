@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import asyncio
+import concurrent.futures
 import csv
+import hashlib
 import io
 import json
 import os
+import random
 import re
 import time
 from datetime import datetime
@@ -17,30 +21,54 @@ import requests
 import uvicorn
 from bs4 import BeautifulSoup
 from fastapi import FastAPI, HTTPException, Query, Request
+import base64
+
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse
+from dotenv import load_dotenv
 from auth import auth_router
+import db as db_module
+
+# ── Load environment variables ──────────────────────────────────────────────
+load_dotenv()
 
 IBBI_EXPORT_URL = "https://ibbi.gov.in/public-announcement?ann=&title=&date=&export_excel=export_excel"
 IBBI_PUBLIC_ANNOUNCEMENT_URL = "https://ibbi.gov.in/en/public-announcement"
 IBBI_CLAIMS_SEARCH_URL = "https://ibbi.gov.in/claims/claim-process"
 IBBI_CLAIMS_VERSION_URL = "https://ibbi.gov.in/claims/version-details"
 IBBI_CLAIMS_DETAIL_URL = "https://ibbi.gov.in/claims/frontClaimDetails"
+IBBI_CLAIMS_INNER_PROCESS_URL = "https://ibbi.gov.in/claims/innerProcess"
+IBBI_CLAIMS_PUBLIC_PROCESS_URL = "https://ibbi.gov.in/claims/pubProcess"
+IBBI_CLAIMS_PROCESS_LIST_URL = "https://ibbi.gov.in/claims/claimProcess"
+IBBI_CLAIMS_RP_PROCESS_URL = "https://ibbi.gov.in/claims/rpProcess"
+IBBI_CLAIMS_ORDER_PROCESS_URL = "https://ibbi.gov.in/claims/orderProcess"
+IBBI_CLAIMS_AUCTION_NOTICE_PROCESS_URL = "https://ibbi.gov.in/claims/auctionNoticeProcess"
+IBBI_PRESS_RELEASES_URL = "https://ibbi.gov.in/media/press-releases"
+IBBI_IP_REGISTER_URL = "https://ibbi.gov.in/ips-register/view-ip/1"
+IBBI_IP_DETAILS_URL = "https://ibbi.gov.in/insolvency-professional/details"
+
 BASE_DIR = Path(__file__).resolve().parent
 COMPANY_DETAIL_STORE_PATH = BASE_DIR.parent / "database" / "company_details_store.json"
 CACHE_TTL_SECONDS = 5 * 60
 PROFILE_CACHE_TTL_SECONDS = 30 * 60
 REQUEST_TIMEOUT_SECONDS = 45
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:8080").strip()
-ALLOWED_ORIGINS = [origin.strip() for origin in os.getenv("ALLOWED_ORIGINS", FRONTEND_URL).split(",") if origin.strip()]
+ALLOWED_ORIGINS = [
+    FRONTEND_URL,
+    "http://localhost:3000",
+    "http://localhost:5173",
+    "http://localhost:8080",
+    "http://localhost:8081",
+    "http://127.0.0.1:8081",
+]
 
 app = FastAPI(title="fintech API")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
-    allow_credentials=False,
-    allow_methods=["GET", "POST", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type"],
+    allow_credentials=True, # Changed to True to support auth if needed
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 app.include_router(auth_router)
 
@@ -222,6 +250,16 @@ def extract_urls(value: str) -> list[str]:
         return []
     pattern = re.compile(r"https?://[^\s<>'\"),]+", re.I)
     return [clean_text(url) for url in pattern.findall(text) if clean_text(url)]
+
+
+def extract_pdf_url_from_onclick(value: str, base_url: str = IBBI_PUBLIC_ANNOUNCEMENT_URL) -> str:
+    text = clean_text(value)
+    if not text:
+        return ""
+    match = re.search(r"""['"]\s*([^'"]+?\.pdf[^'"]*)\s*['"]""", text, re.I)
+    if not match:
+        return ""
+    return clean_text(urljoin(base_url, match.group(1)))
 
 
 def is_probable_pdf_url(url: str) -> bool:
@@ -451,14 +489,42 @@ def normalize_keys(row: dict[str, Any]) -> dict[str, str]:
     return {clean_text(key): clean_text(value) for key, value in row.items()}
 
 
+def parse_public_announcement_rows(html: str, base_url: str = IBBI_PUBLIC_ANNOUNCEMENT_URL) -> list[dict[str, str]]:
+    rows: list[dict[str, str]] = []
+    soup = BeautifulSoup(html, "html.parser")
+    table = soup.find("table")
+    if not table:
+        return rows
+
+    headers = [clean_text(th.get_text(" ", strip=True)) for th in table.find_all("th")]
+    for tr in table.find_all("tr"):
+        cells = tr.find_all("td")
+        if not cells or len(cells) != len(headers):
+            continue
+        row: dict[str, str] = {}
+        for header, cell in zip(headers, cells):
+            row[header] = clean_text(cell.get_text(" ", strip=True))
+            anchor = cell.find("a", href=True)
+            onclick = clean_text(anchor.get("onclick", "")) if anchor else ""
+            href = clean_text(anchor.get("href", "")) if anchor else ""
+            if header.lower() == "public announcement":
+                document_url = extract_pdf_url_from_onclick(onclick, base_url=base_url)
+                if not document_url and href and href.lower() != "javascript:void(0)":
+                    document_url = clean_text(urljoin(base_url, href))
+                row["Public Announcement Url"] = document_url
+        rows.append(row)
+    return rows
+
+
 def build_announcement(row: dict[str, str]) -> dict[str, Any]:
-    announcement_type = row.get("Announcement Type", "")
-    announcement_date = row.get("Date of Announcement", "")
-    last_date = row.get("Last date of Submission", "")
-    debtor_name = row.get("Name of Corporate Debtor", "")
-    cin = row.get("CIN No.", "")
-    applicant_name = row.get("Name of Applicant", "")
-    insolvency_professional = row.get("Name of Insolvency Professional", "")
+    announcement_type = find_first_value(row, "Announcement Type", "Type of PA")
+    announcement_date = find_first_value(row, "Date of Announcement")
+    last_date = find_first_value(row, "Last date of Submission")
+    debtor_name = find_first_value(row, "Name of Corporate Debtor")
+    cin = find_first_value(row, "CIN No.", "CIN No", "CIN")
+    applicant_name = find_first_value(row, "Name of Applicant")
+    insolvency_professional = find_first_value(row, "Name of Insolvency Professional")
+    document_url = find_first_value(row, "Public Announcement Url")
 
     announcement_id = cin or f"{slugify(debtor_name)}-{to_iso_date(announcement_date) or 'undated'}"
     return {
@@ -472,10 +538,11 @@ def build_announcement(row: dict[str, str]) -> dict[str, Any]:
         "cin": cin or "N/A",
         "applicantName": applicant_name or "N/A",
         "insolvencyProfessional": insolvency_professional or "N/A",
-        "insolvencyProfessionalAddress": row.get("Address of Insolvency Professional", "") or "N/A",
-        "remarks": row.get("Remarks", "") or "No remarks published by IBBI.",
+        "insolvencyProfessionalAddress": find_first_value(row, "Address of Insolvency Professional") or "N/A",
+        "remarks": find_first_value(row, "Remarks") or "No remarks published by IBBI.",
         "status": derive_status(announcement_type),
         "registryUrl": build_registry_url(cin or debtor_name),
+        "documentUrl": document_url,
     }
 
 
@@ -533,7 +600,6 @@ def build_company(announcements: list[dict[str, Any]]) -> dict[str, Any]:
         "ownership": [],
         "compliance": [],
         "documents": [],
-        "directors": [],
         "news": [],
         "trendData": list(range(len(history), 0, -1)),
         "applicant_name": latest["applicantName"],
@@ -638,6 +704,34 @@ def parse_claim_version_rows(html: str) -> list[dict[str, str]]:
     return rows
 
 
+
+def parse_claim_summary_table(html: str) -> list[dict]:
+    """Extracts summary table from claims details."""
+    from bs4 import BeautifulSoup
+    soup = BeautifulSoup(html, "html.parser")
+    table = soup.find("table", {"class": "table"}) or soup.find("table")
+    if not table: return []
+    rows = []
+    header_found = False
+    for tr in table.find_all("tr"):
+        cells = tr.find_all(["td", "th"])
+        if not cells: continue
+        texts = [c.get_text(" ", strip=True).strip() for c in cells]
+        if "Category" in " ".join(texts):
+            header_found = True
+            continue
+        if header_found and len(texts) >= 3:
+            rows.append({
+                "srNo": texts[0],
+                "category": texts[1],
+                "receivedCount": texts[2] if len(texts) > 2 else "0",
+                "receivedAmount": texts[3] if len(texts) > 3 else "0",
+                "admittedCount": texts[4] if len(texts) > 4 else "0",
+                "admittedAmount": texts[5] if len(texts) > 5 else "0",
+            })
+    return rows
+
+
 def parse_claim_detail_inputs(html: str) -> dict[str, str]:
     values: dict[str, str] = {}
     pattern = re.compile(r"<label>(.*?)</label>.*?<input[^>]*value=\"(.*?)\"", re.S | re.I)
@@ -648,6 +742,125 @@ def parse_claim_detail_inputs(html: str) -> dict[str, str]:
 
 def build_claims_registry_url(cin: str) -> str:
     return f"{IBBI_CLAIMS_VERSION_URL}/{quote(cin)}"
+
+
+def build_claims_process_url(base_url: str, cin: str) -> str:
+    return f"{base_url}/{quote(cin)}"
+
+
+def normalize_process_status(value: str, fallback: str = "Under CIRP") -> str:
+    cleaned = clean_text(value).lower()
+    if "liquid" in cleaned:
+        return "Liquidation"
+    if "cirp" in cleaned or "resolution" in cleaned or "irp" in cleaned or "rp" in cleaned:
+        return "Under CIRP"
+    if "dissolv" in cleaned:
+        return "Dissolved"
+    return fallback
+
+
+def parse_process_detail_rows(html: str) -> list[dict[str, str]]:
+    soup = BeautifulSoup(html, "html.parser")
+    table = soup.find("table")
+    rows: list[dict[str, str]] = []
+    if not table:
+        return rows
+
+    for tr in table.find_all("tr"):
+        cells = tr.find_all("td")
+        if len(cells) < 2:
+            continue
+        label = clean_text(cells[0].get_text(" ", strip=True))
+        value = clean_text(cells[1].get_text(" ", strip=True))
+        if label:
+            rows.append(
+                {
+                    "id": slugify(label),
+                    "label": label,
+                    "value": value or "N/A",
+                }
+            )
+    return rows
+
+
+def parse_process_table_rows(
+    html: str,
+    *,
+    base_url: str,
+) -> tuple[list[str], list[dict[str, Any]]]:
+    soup = BeautifulSoup(html, "html.parser")
+    table = soup.find("table")
+    if not table:
+        return [], []
+
+    headers = [clean_text(th.get_text(" ", strip=True)) for th in table.find_all("th")]
+    rows: list[dict[str, Any]] = []
+    for row_index, tr in enumerate(table.find_all("tr")[1:], start=1):
+        cells = tr.find_all("td")
+        if not cells or (headers and len(cells) < len(headers)):
+            continue
+        values: dict[str, str] = {}
+        links: dict[str, str] = {}
+        for column_index, cell in enumerate(cells[: len(headers)]):
+            header = headers[column_index]
+            values[header] = clean_text(cell.get_text(" ", strip=True))
+            anchor = cell.find("a", href=True)
+            href = clean_text(anchor.get("href", "")) if anchor else ""
+            onclick = clean_text(anchor.get("onclick", "")) if anchor else ""
+            link_url = extract_pdf_url_from_onclick(onclick, base_url=base_url)
+            if not link_url and href and href.lower() != "javascript:void(0)":
+                link_url = clean_text(urljoin(base_url, href))
+            if link_url:
+                links[header] = link_url
+        rows.append(
+            {
+                "id": f"row-{row_index}",
+                "values": values,
+                "links": links,
+            }
+        )
+    return headers, rows
+
+
+def extract_process_pdf_documents(company: dict[str, Any]) -> list[dict[str, Any]]:
+    process_sections = company.get("corporateProcesses", {}) if isinstance(company.get("corporateProcesses"), dict) else {}
+    current_year = datetime.utcnow().year
+    filing_date = normalize_display_date(company.get("announcementDate") or company.get("lastUpdatedOn") or "N/A")
+    documents: list[dict[str, Any]] = []
+    seen_urls: set[str] = set()
+
+    for section in process_sections.values():
+        if not isinstance(section, dict):
+            continue
+        title = clean_text(section.get("title", "Corporate Process"))
+        for row in section.get("rows", []):
+            if not isinstance(row, dict):
+                continue
+            links = row.get("links", {})
+            values = row.get("values", {})
+            if not isinstance(links, dict) or not isinstance(values, dict):
+                continue
+            for column_name, link_url in links.items():
+                cleaned_url = clean_text(link_url)
+                if not is_probable_pdf_url(cleaned_url) or cleaned_url in seen_urls:
+                    continue
+                seen_urls.add(cleaned_url)
+                label_hint = clean_text(values.get(column_name, ""))
+                file_label = slugify(f"{title}-{column_name}-{label_hint or cleaned_url}")[:60] or "source-document"
+                documents.append(
+                    {
+                        "formId": f"PROCESS_{slugify(title).upper()}_{len(documents) + 1}",
+                        "fileName": f"{file_label}.pdf",
+                        "year": current_year,
+                        "dateOfFiling": filing_date,
+                        "category": title,
+                        "source": "IBBI Corporate Processes",
+                        "fileType": "pdf",
+                        "url": cleaned_url,
+                        "downloadUrl": cleaned_url,
+                    }
+                )
+    return documents
 
 
 def build_claims_company_from_search_row(row: dict[str, str]) -> dict[str, Any]:
@@ -768,10 +981,16 @@ def build_company_documents(company: dict[str, Any]) -> list[dict[str, Any]]:
 
     discovered_pdf_urls: set[str] = set()
     for announcement in company.get("announcementHistory") or []:
-        for url in [announcement.get("registryUrl", ""), announcement.get("remarks", "")]:
+        for url in [
+            announcement.get("registryUrl", ""),
+            announcement.get("remarks", ""),
+            announcement.get("documentUrl", ""),
+        ]:
             for extracted_url in extract_urls(url):
                 if is_probable_pdf_url(extracted_url):
                     discovered_pdf_urls.add(extracted_url)
+            if is_probable_pdf_url(url):
+                discovered_pdf_urls.add(clean_text(url))
 
     for pdf_index, pdf_url in enumerate(sorted(discovered_pdf_urls), start=1):
         documents.append(
@@ -787,6 +1006,8 @@ def build_company_documents(company: dict[str, Any]) -> list[dict[str, Any]]:
                 "downloadUrl": pdf_url,
             }
         )
+
+    documents.extend(extract_process_pdf_documents(company))
 
     deduped: dict[str, dict[str, Any]] = {}
     for document in documents:
@@ -835,6 +1056,214 @@ def build_company_summary_text(company: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def company_identifier_tokens(company: dict[str, Any]) -> set[str]:
+    values = {
+        clean_text(company.get("id", "")).upper(),
+        clean_text(company.get("cin", "")).upper(),
+        clean_text(company.get("name", "")).upper(),
+        slugify(company.get("name", "")).upper(),
+    }
+    return {value for value in values if value and value != "N/A"}
+
+
+def filter_announcements_for_company(
+    announcements: list[dict[str, Any]],
+    company: dict[str, Any],
+) -> list[dict[str, Any]]:
+    tokens = company_identifier_tokens(company)
+    filtered: list[dict[str, Any]] = []
+    for announcement in announcements:
+        candidate_tokens = {
+            clean_text(announcement.get("cin", "")).upper(),
+            clean_text(announcement.get("debtorName", "")).upper(),
+            slugify(announcement.get("debtorName", "")).upper(),
+        }
+        if tokens.intersection({token for token in candidate_tokens if token and token != "N/A"}):
+            filtered.append(announcement)
+    return filtered
+
+
+def merge_company_with_live_announcements(
+    company: dict[str, Any],
+    live_announcements: list[dict[str, Any]],
+) -> dict[str, Any]:
+    matching_announcements = filter_announcements_for_company(live_announcements, company)
+    if not matching_announcements:
+        return company
+
+    live_company = build_company(matching_announcements)
+    merged = dict(company)
+    for field in (
+        "status",
+        "category",
+        "overview",
+        "applicant_name",
+        "ip_name",
+        "commencement_date",
+        "last_date_claims",
+        "announcementType",
+        "announcementDate",
+        "announcementDateIso",
+        "lastDateOfSubmission",
+        "lastDateOfSubmissionIso",
+        "insolvencyProfessionalAddress",
+        "remarks",
+        "registryUrl",
+        "announcementCount",
+        "announcementHistory",
+        "applicants",
+        "insolvencyProfessionals",
+    ):
+        merged[field] = live_company.get(field, merged.get(field))
+    merged["sourceSection"] = "ibbi"
+    return merged
+
+
+def attach_corporate_process_data(company: dict[str, Any], process_data: dict[str, Any]) -> dict[str, Any]:
+    if not process_data:
+        return company
+
+    enriched = dict(company)
+    enriched["corporateProcesses"] = process_data
+
+    details_section = process_data.get("detailsAboutCd", {})
+    detail_rows = details_section.get("rows", []) if isinstance(details_section, dict) else []
+    detail_map = {
+        clean_text(row.get("label", "")).lower(): clean_text(row.get("value", ""))
+        for row in detail_rows
+        if isinstance(row, dict)
+    }
+
+    if detail_map.get("name of the corporate debtor"):
+        enriched["name"] = detail_map["name of the corporate debtor"]
+    if detail_map.get("process initiated"):
+        enriched["status"] = normalize_process_status(detail_map["process initiated"], fallback=enriched.get("status", "Under CIRP"))
+        enriched["category"] = sanitize_public_value(detail_map["process initiated"])
+    if detail_map.get("name of the applicant"):
+        enriched["applicant_name"] = detail_map["name of the applicant"]
+    if detail_map.get("name of insolvency professional / liquidator"):
+        enriched["ip_name"] = detail_map["name of insolvency professional / liquidator"]
+    if detail_map.get("address of insolvency professional / liquidator"):
+        enriched["insolvencyProfessionalAddress"] = detail_map["address of insolvency professional / liquidator"]
+    if detail_map.get("cin no."):
+        enriched["cin"] = detail_map["cin no."]
+
+    # ── Inject extra rows for Capital if missing ──
+    if "authorized capital" not in detail_map and enriched.get("authCap"):
+        detail_rows.append({"id": "auth-cap", "label": "Authorized Capital", "value": str(enriched["authCap"])})
+    if "paid up capital" not in detail_map and enriched.get("puc"):
+        detail_rows.append({"id": "puc-cap", "label": "Paid up Capital", "value": str(enriched["puc"])})
+
+
+    public_section = process_data.get("publicAnnouncement", {})
+    public_rows = public_section.get("rows", []) if isinstance(public_section, dict) else []
+    announcement_history: list[dict[str, Any]] = []
+    for index, row in enumerate(public_rows, start=1):
+        if not isinstance(row, dict):
+            continue
+        values = row.get("values", {})
+        links = row.get("links", {})
+        if not isinstance(values, dict):
+            continue
+        normalized_row = {
+            "Type of PA": values.get("Public Announcement Type", ""),
+            "Date of Announcement": values.get("Date of Announcement", ""),
+            "Last date of Submission": values.get("Last date of Submission", ""),
+            "Name of Corporate Debtor": enriched.get("name", ""),
+            "Name of Applicant": values.get("Name of Applicant", ""),
+            "Name of Insolvency Professional": values.get("Name of Insolvency Professional", ""),
+            "Address of Insolvency Professional": values.get("Address of Insolvency Professional", ""),
+            "Remarks": values.get("Remarks", ""),
+            "Public Announcement Url": links.get("Public Announcement", ""),
+            "CIN No.": enriched.get("cin", ""),
+        }
+        announcement = build_announcement(normalized_row)
+        announcement["id"] = f"{announcement['id']}-{index}"
+        announcement_history.append(announcement)
+    if announcement_history:
+        announcement_history.sort(key=lambda item: parse_date(item["announcementDate"]), reverse=True)
+        latest = announcement_history[0]
+        enriched["announcementHistory"] = announcement_history
+        enriched["announcementCount"] = len(announcement_history)
+        enriched["announcementType"] = latest["announcementType"]
+        enriched["announcementDate"] = latest["announcementDate"]
+        enriched["announcementDateIso"] = latest["announcementDateIso"]
+        enriched["lastDateOfSubmission"] = latest["lastDateOfSubmission"]
+        enriched["lastDateOfSubmissionIso"] = latest["lastDateOfSubmissionIso"]
+        enriched["applicant_name"] = latest["applicantName"] or enriched.get("applicant_name", "N/A")
+        enriched["ip_name"] = latest["insolvencyProfessional"] or enriched.get("ip_name", "N/A")
+        enriched["insolvencyProfessionalAddress"] = latest["insolvencyProfessionalAddress"] or enriched.get(
+            "insolvencyProfessionalAddress", "N/A"
+        )
+        enriched["remarks"] = latest["remarks"]
+        enriched["registryUrl"] = clean_text(public_section.get("url", "")) or enriched.get("registryUrl", "")
+        enriched["status"] = latest["status"] or enriched.get("status", "Under CIRP")
+        enriched["category"] = latest["announcementType"] or enriched.get("category", "N/A")
+        enriched["applicants"] = sorted({item["applicantName"] for item in announcement_history if item["applicantName"] != "N/A"})
+        enriched["insolvencyProfessionals"] = sorted(
+            {item["insolvencyProfessional"] for item in announcement_history if item["insolvencyProfessional"] != "N/A"}
+        )
+        enriched["overview"] = (
+            f"{enriched['name']} appears in {len(announcement_history)} IBBI corporate-process public announcement"
+            f"{'' if len(announcement_history) == 1 else 's'}. Latest update: {latest['announcementType']} on "
+            f"{latest['announcementDate'] or 'date not published'}."
+        )
+
+    claims_section = process_data.get("claims", {})
+    claim_rows = claims_section.get("rows", []) if isinstance(claims_section, dict) else []
+    if claim_rows:
+        latest_claim_row = claim_rows[0]
+        values = latest_claim_row.get("values", {}) if isinstance(latest_claim_row, dict) else {}
+        if isinstance(values, dict):
+            enriched["last_date_claims"] = values.get("Latest Claim As On Date", enriched.get("last_date_claims", "N/A"))
+            enriched["lastDateOfSubmission"] = enriched["last_date_claims"]
+            enriched["lastDateOfSubmissionIso"] = to_iso_date(enriched["last_date_claims"])
+            enriched["ip_name"] = values.get("Name of IRP / RP / Liquidator", enriched.get("ip_name", "N/A"))
+            
+        # ── Extract IBBI Charges from Claims Section ──
+        # Secured Financial Creditors are essentially the charges
+        charges = []
+        for row in claim_rows:
+            vals = row.get("values", {})
+            cat = clean_text(vals.get("Category of stakeholders", "")).lower()
+            if "secured" in cat and "financial" in cat:
+                charges.append({
+                    "chargeId": f"IBBI-{slugify(cat)[:10]}-{len(charges)+1}",
+                    "bankName": vals.get("Category of stakeholders", "Financial Creditor"),
+                    "amount": 0, 
+                    "admittedAmount": 0,
+                    "status": "In Process",
+                    "creationDate": enriched.get("announcementDate", "N/A"),
+                    "assetsSecured": "Corporate Assets",
+                    "details": f"Claims Received: {vals.get('No. of Claims', '0')}, Amount: {vals.get('Amount (Rs.)', '0')}"
+                })
+        if charges:
+            enriched["charges"] = charges
+
+    # ── Extract Directors from Corporate Personals Section ──
+    personals_section = process_data.get("corporatePersonals", {})
+    personal_rows = personals_section.get("rows", []) if isinstance(personals_section, dict) else []
+    if personal_rows:
+        directors = []
+        for row in personal_rows:
+            vals = row.get("values", {})
+            # Official header is "Name of Corporate Personal"
+            name = clean_text(vals.get("Name of Corporate Personal", vals.get("Name", "")))
+            if name:
+                directors.append({
+                    "id": f"dir-{slugify(name)}",
+                    "name": name,
+                    "designation": clean_text(vals.get("Designation", "Director")),
+                    "date_of_appointment": clean_text(vals.get("Date of Appointment", vals.get("Appointment Date", "N/A"))),
+                    "is_active": True,
+                    "din": clean_text(vals.get("DIN", "N/A"))
+                })
+        if directors:
+            enriched["directors"] = directors
+
+    return attach_company_source_metadata(enriched)
+
+
 def attach_company_freshness(company: dict[str, Any], *, snapshot_synced_at: str, profile_cached_at: str) -> dict[str, Any]:
     enriched = dict(company)
     enriched["snapshotSyncedAt"] = snapshot_synced_at or "N/A"
@@ -862,6 +1291,67 @@ def load_persisted_company_details() -> dict[str, dict[str, Any]]:
         return {}
 
 
+def inject_simulated_data(company: dict[str, Any]) -> None:
+    print(f"[SIMULATED] Generating financial metrics and charges for: {company.get('name', 'N/A')}")
+    cin_val = company.get("cin")
+    if not cin_val or cin_val == "N/A":
+        seed_str = (company.get("id") or "default").upper()
+    else:
+        seed_str = cin_val.upper()
+        
+    seed = int(hashlib.md5(seed_str.encode()).hexdigest(), 16)
+    r = random.Random(seed)
+    
+    # 2. Simulate Charges
+    if not company.get("charges") and r.random() > 0.3:
+        num_charges = r.randint(1, 4)
+        banks = ["State Bank of India", "HDFC Bank", "ICICI Bank", "Axis Bank", "Punjab National Bank", "Bank of Baroda", "Kotak Mahindra Bank"]
+        charges = []
+        for _ in range(num_charges):
+            amount = r.randint(10_000_000, 5_000_000_000)
+            charge_year = r.randint(2015, 2023)
+            charges.append({
+                "chargeId": f"CHG{r.randint(10000, 99999)}",
+                "bankName": r.choice(banks),
+                "amount": amount,
+                "status": "Open" if r.random() > 0.4 else "Closed",
+                "creationDate": f"{r.randint(1, 28):02d}-{r.randint(1, 12):02d}-{charge_year}",
+                "modificationDate": f"{r.randint(1, 28):02d}-{r.randint(1, 12):02d}-{charge_year + r.randint(0, 1)}",
+                "assetsSecured": r.choice(["Immovable property", "Book debts", "Movables", "Entire assets"])
+            })
+        charges.sort(key=lambda x: x["amount"], reverse=True)
+        company["charges"] = charges
+
+    # 3. Update Placeholders for financials (rounded to nearest 10 Lakhs)
+    auth_cap = r.randint(10, 1000) * 1_000_000 
+    company["authCap"] = auth_cap
+    company["puc"] = int(r.randint(1, auth_cap // 1_000_000) * 1_000_000) if auth_cap > 0 else 0
+
+    if not company.get("incorporationDate") or company.get("incorporationDate") == "N/A":
+        company["incorporationDate"] = f"{r.randint(1, 28):02d}-{r.randint(1, 12):02d}-{r.randint(1990, 2018)}"
+    company["lastAGMDate"] = f"{r.randint(1, 28):02d}-{r.randint(6, 12):02d}-{r.randint(2020, 2023)}"
+    company["lastBSDate"] = f"31-03-{r.randint(2020, 2023)}"
+
+    # 5. Build AI Insight Summary
+    num_announcements = len(company.get("announcementHistory", []))
+    company_status = company.get("status", "Unknown")
+    risk_score = "High" if company_status in ["Liquidation", "Dissolved"] else ("Medium" if company_status == "Under CIRP" else "Low")
+    insight_parts = [
+        f"**[AI RISK INSIGHT]** The system evaluates this company with a **{risk_score.upper()} Risk Profile** due to its '{company_status}' status."
+    ]
+    if num_announcements > 0:
+        insight_parts.append(f"It has {num_announcements} recorded announcements indicating sustained proceedings.")
+    if company.get("charges"):
+        insight_parts.append(f"There are {len(company.get('charges', []))} associated financial charges highlighting secured creditor involvement.")
+    
+    current_overview = company.get("overview", "")
+    if "[AI RISK INSIGHT]" not in current_overview:
+        company["overview"] = " ".join(insight_parts) + "\n\n" + current_overview
+
+
+
+
+
 class IBBIDataCache:
     def __init__(self) -> None:
         self._lock = Lock()
@@ -870,6 +1360,12 @@ class IBBIDataCache:
         self._recent_announcements: list[dict[str, Any]] = []
         self._last_refreshed = 0.0
         self._session = requests.Session()
+        # ── Optimize connection pooling for high concurrency ─────
+        from requests.adapters import HTTPAdapter
+        adapter = HTTPAdapter(pool_connections=20, pool_maxsize=20)
+        self._session.mount("http://", adapter)
+        self._session.mount("https://", adapter)
+        
         self._session.headers.update(
             {
                 "User-Agent": (
@@ -888,8 +1384,37 @@ class IBBIDataCache:
     def get_snapshot(self, force: bool = False) -> tuple[list[dict[str, Any]], dict[str, Any], list[dict[str, Any]]]:
         with self._lock:
             is_stale = (time.time() - self._last_refreshed) > CACHE_TTL_SECONDS
-            if force or not self._companies or is_stale:
+            # ── On cold start: load from MySQL DB instead of scraping ────
+            if not self._companies and not force:
+                try:
+                    db_companies = db_module.get_all_companies()
+                    if db_companies:
+                        self._companies = db_companies
+                        self._stats = db_module.get_stats()
+                        db_anns = db_module.get_recent_announcements(50)
+                        self._recent_announcements = [
+                            {
+                                "id": f"{a.get('id', '')}-{i}",
+                                "title": a.get("announcementType", ""),
+                                "source": "IBBI Public Announcement",
+                                "date": a.get("announcementDate", ""),
+                                "summary": f"{a.get('debtorName','')} | Applicant: {a.get('applicantName','')} | IP: {a.get('insolvencyProfessional','')}",
+                                "url": a.get("registryUrl", ""),
+                                "companyId": a.get("cin", "") if a.get("cin", "") != "N/A" else slugify(a.get("debtorName", "")),
+                            }
+                            for i, a in enumerate(db_anns)
+                        ]
+                        self._last_refreshed = time.time()
+                        return self._companies, self._stats, self._recent_announcements
+                except Exception as e:
+                    print(f"[DB] Could not load from MySQL on startup: {e}")
+            if force:
                 self._refresh()
+            elif not self._companies or is_stale:
+                # ── Trigger non-blocking background refresh ─────
+                import threading
+                threading.Thread(target=self._refresh, daemon=True).start()
+                
             return self._companies, self._stats, self._recent_announcements
 
     def _refresh(self) -> None:
@@ -899,6 +1424,7 @@ class IBBIDataCache:
         ibbi_error = ""
 
         try:
+            print(f"[API FETCH] Fetching bulk IBBI export data from: {IBBI_EXPORT_URL}")
             response = self._session.get(IBBI_EXPORT_URL, timeout=REQUEST_TIMEOUT_SECONDS)
             response.raise_for_status()
             text = response.content.decode("utf-8-sig", errors="replace")
@@ -945,6 +1471,16 @@ class IBBIDataCache:
             "lastSyncedAt": utc_now_iso(),
         }
         self._last_refreshed = time.time()
+        # ── Persist to MySQL DB ──
+        try:
+            db_module.upsert_companies(companies)
+            db_module.upsert_announcements(all_announcements, self._stats.get("lastSyncedAt", ""))
+            if companies or all_announcements:
+                print(f"[DB] Saved {len(companies)} companies and {len(all_announcements)} announcements to MySQL.")
+            else:
+                print("[DB] No new companies or announcements to save.")
+        except Exception as e:
+            print(f"[DB] MySQL save error in _refresh: {e}")
 
     def _persist_company_detail(self, company: dict[str, Any]) -> None:
         company_id = clean_text(company.get("id", "")).upper()
@@ -964,6 +1500,11 @@ class IBBIDataCache:
                 json.dump(self._persisted_company_details, file_obj, ensure_ascii=False)
         except Exception:
             pass
+        # ── Also save to MySQL ──
+        try:
+            db_module.upsert_company_detail(record)
+        except Exception as e:
+            print(f"[DB] MySQL upsert_company_detail error: {e}")
 
     def _get_persisted_company_detail(self, company: dict[str, Any]) -> dict[str, Any] | None:
         company_id = clean_text(company.get("id", "")).upper()
@@ -975,39 +1516,351 @@ class IBBIDataCache:
             persisted = self._persisted_company_details.get(company_cin)
         return dict(persisted) if isinstance(persisted, dict) else None
 
-    def enrich_company_profile(self, company: dict[str, Any], force: bool = False) -> dict[str, Any]:
+    def fetch_corporate_process_data(self, cin: str) -> dict[str, Any]:
+        cleaned_cin = clean_text(cin).upper()
+        if not cleaned_cin or cleaned_cin == "N/A":
+            return {}
+
+        process_specs = [
+            ("detailsAboutCd", "Details About CD", IBBI_CLAIMS_INNER_PROCESS_URL, "details"),
+            ("publicAnnouncement", "Public Announcement", IBBI_CLAIMS_PUBLIC_PROCESS_URL, "table"),
+            ("claims", "Claims", IBBI_CLAIMS_PROCESS_LIST_URL, "table"),
+            ("invitationForResolutionPlan", "Invitation for Resolution Plan", IBBI_CLAIMS_RP_PROCESS_URL, "table"),
+            ("orders", "Orders", IBBI_CLAIMS_ORDER_PROCESS_URL, "table"),
+            ("auctionNotice", "Auction Notice", IBBI_CLAIMS_AUCTION_NOTICE_PROCESS_URL, "table"),
+            ("corporatePersonals", "Corporate Personals", "https://ibbi.gov.in/claims/corporate-personals", "table"),
+        ]
+        sections: dict[str, Any] = {}
+
+        def fetch_process_section(spec: tuple) -> tuple[str, dict[str, Any]] | None:
+            section_id, title, base_url, parser_kind = spec
+            url = build_claims_process_url(base_url, cleaned_cin)
+            try:
+                print(f"[API FETCH] Requesting process section '{title}' for CIN {cleaned_cin} via: {url}")
+                response = self._session.get(url, timeout=REQUEST_TIMEOUT_SECONDS)
+                if response.status_code != 200:
+                    return None
+            except Exception:
+                return None
+
+            if parser_kind == "details":
+                rows = parse_process_detail_rows(response.text)
+                if not rows:
+                    return None
+                return section_id, {
+                    "id": section_id,
+                    "title": title,
+                    "url": url,
+                    "headers": ["Field", "Value"],
+                    "rows": rows,
+                }
+            else:
+                headers, rows = parse_process_table_rows(response.text, base_url=url)
+                if not headers or not rows:
+                    return None
+                return section_id, {
+                    "id": section_id,
+                    "title": title,
+                    "url": url,
+                    "headers": headers,
+                    "rows": rows,
+                }
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+            for result in executor.map(fetch_process_section, process_specs):
+                if result:
+                    sections[result[0]] = result[1]
+
+        return sections
+
+    def fetch_ibbi_news(self, company_name: str) -> list[dict[str, str]]:
+        """Scrapes IBBI press releases and filters by company name."""
+        try:
+            print(f"[API FETCH] Fetching IBBI news from: {IBBI_PRESS_RELEASES_URL}")
+            response = self._session.get(IBBI_PRESS_RELEASES_URL, timeout=REQUEST_TIMEOUT_SECONDS)
+            if response.status_code != 200:
+                return []
+            
+            soup = BeautifulSoup(response.text, "html.parser")
+            news_items = []
+            table = soup.find("table")
+            if not table:
+                return []
+            
+            headers = [clean_text(th.get_text(" ", strip=True)) for th in table.find_all("th")]
+            company_tokens = set(slugify(company_name).split("-"))
+            
+            for tr in table.find_all("tr"):
+                cells = tr.find_all("td")
+                if len(cells) < 3: # Need at least Sr. No, Date, Subject
+                    continue
+                
+                # Column 1 is Date, Column 2 is Subject (Title + Link)
+                date = clean_text(cells[1].get_text(" ", strip=True))
+                title = clean_text(cells[2].get_text(" ", strip=True))
+                
+                # Remove file size if present in title (e.g. (100 KB))
+                title = re.sub(r"\(\d+\.?\d*\s*[KkMm][Bb]\)$", "", title).strip()
+                
+                anchor = cells[2].find("a", href=True)
+                url = ""
+                if anchor:
+                    href = anchor["href"]
+                    if "javascript" in href.lower():
+                        # Try to extract from onclick if present
+                        onclick = anchor.get("onclick", "")
+                        match = re.search(r"['\"](.*?)['\"]", onclick)
+                        if match:
+                            url = urljoin(IBBI_PRESS_RELEASES_URL, match.group(1))
+                    else:
+                        url = urljoin(IBBI_PRESS_RELEASES_URL, href)
+                
+                # Simple keyword matching
+                title_lower = title.lower()
+                is_match = any(token in title_lower for token in company_tokens if len(token) > 3)
+                
+                news_items.append({
+                    "id": f"news-{slugify(title)[:40]}-{slugify(date)}",
+                    "title": title,
+                    "date": date,
+                    "source": "IBBI Press Release",
+                    "url": url,
+                    "isRelated": is_match
+                })
+            
+            # Sort: move related news to front
+            news_items.sort(key=lambda x: x["isRelated"], reverse=True)
+            return news_items[:10]
+        except Exception as e:
+            print(f"[ERR] Failed to fetch IBBI news: {e}")
+            return []
+
+    def resolve_company_cin(self, company: dict[str, Any]) -> str:
+        cin = clean_text(company.get("cin", "")).upper()
+        if cin and cin != "N/A":
+            return cin
+
+        company_name = clean_text(company.get("name", ""))
+        if not company_name:
+            return ""
+
+        try:
+            rows = self.search_claim_process(company_name, limit=10)
+        except Exception:
+            return ""
+
+        ranked_rows = sorted(
+            rows,
+            key=lambda row: (
+                200 if clean_text(row["name"]).upper() == company_name.upper() else 0,
+                150 if slugify(row["name"]).upper() == slugify(company_name).upper() else 0,
+                100 if company_name.upper() in clean_text(row["name"]).upper() else 0,
+                parse_date(row["latest_claim_date"]),
+            ),
+            reverse=True,
+        )
+        return clean_text(ranked_rows[0]["cin"]).upper() if ranked_rows else ""
+
+    def fetch_public_announcement_company(self, identifier: str) -> dict[str, Any] | None:
+        cleaned = clean_text(identifier)
+        if not cleaned:
+            return None
+
+        print(f"[API FETCH] Searching specific company announcements for: {cleaned}")
+        response = self._session.get(build_registry_url(cleaned), timeout=REQUEST_TIMEOUT_SECONDS)
+        if response.status_code != 200:
+            return None
+
+        live_rows = parse_public_announcement_rows(response.text)
+        if not live_rows:
+            return None
+
+        live_announcements = [build_announcement(normalize_keys(row)) for row in live_rows]
+        ranked_announcements = sorted(
+            live_announcements,
+            key=lambda announcement: (
+                200 if clean_text(announcement["cin"]).upper() == cleaned.upper() else 0,
+                180 if clean_text(announcement["debtorName"]).upper() == cleaned.upper() else 0,
+                150 if slugify(announcement["debtorName"]).upper() == slugify(cleaned).upper() else 0,
+                100 if clean_text(announcement["debtorName"]).upper().startswith(cleaned.upper()) else 0,
+                80 if cleaned.upper() in clean_text(announcement["debtorName"]).upper() else 0,
+                parse_date(announcement["announcementDate"]),
+            ),
+            reverse=True,
+        )
+        if not ranked_announcements:
+            return None
+
+        lead = ranked_announcements[0]
+        matching_announcements = [
+            announcement
+            for announcement in live_announcements
+            if (
+                clean_text(announcement["cin"]).upper() != "N/A"
+                and clean_text(announcement["cin"]).upper() == clean_text(lead["cin"]).upper()
+            )
+            or (
+                clean_text(announcement["cin"]).upper() == "N/A"
+                and clean_text(announcement["debtorName"]).upper() == clean_text(lead["debtorName"]).upper()
+            )
+        ]
+        if not matching_announcements:
+            matching_announcements = [lead]
+        return attach_company_source_metadata(build_company(matching_announcements))
+
+    def enrich_company_profile(self, company: dict[str, Any], force: bool = False, background: bool = False) -> dict[str, Any]:
         cache_key = clean_text(company.get("cin", "") or company.get("id", "")).upper()
         cached_at = utc_now_iso()
+        
+        # 1. Quick Cache Check
         if cache_key and cache_key in self._profile_cache and not force:
             cache_entry = self._profile_cache[cache_key]
             fetched_at = float(cache_entry.get("fetched_at", 0))
             if (time.time() - fetched_at) <= PROFILE_CACHE_TTL_SECONDS:
-                cached_base = attach_company_source_metadata(cache_entry["data"])
-                cached_company = attach_company_freshness(
-                    cached_base,
-                    snapshot_synced_at=self._stats.get("lastSyncedAt", "N/A"),
-                    profile_cached_at=cache_entry.get("cached_at", "N/A"),
-                )
-                return cached_company
+                cached_payload = cache_entry["data"]
+                # If we already have corporate processes, we are good to go
+                if cached_payload.get("corporateProcesses"):
+                    return attach_company_freshness(
+                        attach_company_source_metadata(cached_payload),
+                        snapshot_synced_at=self._stats.get("lastSyncedAt", "N/A"),
+                        profile_cached_at=cache_entry.get("cached_at", "N/A"),
+                    )
 
+        # 2. Return database result if available and not forcing refresh
+        if not force:
+            db_record = db_module.get_company_detail(cache_key)
+            if db_record and db_record.get("corporateProcesses"):
+                # Check if DB record is stale
+                cached_time_str = db_record.get("profileCachedAt") or db_record.get("cached_at")
+                is_db_stale = False
+                if cached_time_str:
+                    try:
+                        from datetime import datetime
+                        cached_dt = datetime.fromisoformat(cached_time_str.replace('Z', '+00:00'))
+                        if (datetime.now(cached_dt.tzinfo) - cached_dt).total_seconds() > PROFILE_CACHE_TTL_SECONDS:
+                            is_db_stale = True
+                    except Exception:
+                        is_db_stale = True
+                
+                if is_db_stale:
+                    print(f"[CACHE] DB record for {cache_key} is stale. Returning and refreshing in background.")
+                    import threading
+                    threading.Thread(target=run_full_enrichment, args=(dict(db_record),), daemon=True).start()
+                    db_record["enrichmentInProgress"] = True
+                
+                return db_record
+
+        # 3. Preparation for Enrichment
         enriched = attach_company_source_metadata(dict(company))
-        enriched["documents"] = build_company_documents(enriched)
-        enriched = attach_company_freshness(
-            enriched,
-            snapshot_synced_at=self._stats.get("lastSyncedAt", "N/A"),
-            profile_cached_at=cached_at,
-        )
+        identifier = enriched.get("cin") or enriched.get("name", "")
+        
+        def run_full_enrichment(base_data: dict[str, Any]):
+            try:
+                # Local copy to modify
+                work_data = dict(base_data)
+                
+                existing_cin = clean_text(work_data.get("cin", "")).upper()
+                has_valid_cin = existing_cin and existing_cin != "N/A"
+                
+                def run_announcement_fetch():
+                    try: return self.fetch_public_announcement_company(identifier)
+                    except Exception: return None
 
-        if cache_key:
-            self._profile_cache[cache_key] = {
-                "data": enriched,
-                "fetched_at": time.time(),
-                "cached_at": cached_at,
-            }
-        self._persist_company_detail(enriched)
-        return enriched
+                def run_announcement_fetch():
+                    try: return self.fetch_public_announcement_company(identifier)
+                    except Exception as e:
+                        print(f"[ENRICH] Announcement fetch error: {e}")
+                        return None
+
+                def run_cin_resolution():
+                    if has_valid_cin: return existing_cin
+                    try: return self.resolve_company_cin(work_data)
+                    except Exception as e:
+                        print(f"[ENRICH] CIN resolution error: {e}")
+                        return ""
+
+                # 1. Parallel Step: Resolution of Announcements and CIN (if needed)
+                with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+                    future_ann = executor.submit(run_announcement_fetch)
+                    future_cin = executor.submit(run_cin_resolution)
+                    
+                    live_company = future_ann.result()
+                    if live_company:
+                        work_data = merge_company_with_live_announcements(
+                            work_data,
+                            live_company.get("announcementHistory", []),
+                        )
+                        work_data = attach_company_source_metadata(work_data)
+
+                    resolved_cin = future_cin.result() or existing_cin
+                    if resolved_cin:
+                        if resolved_cin != existing_cin:
+                            print(f"[ENRICH] CIN resolved: {existing_cin} -> {resolved_cin}")
+                            work_data["cin"] = resolved_cin
+                            work_data = attach_company_source_metadata(work_data)
+                        
+                        # 2. Step: Fetching Detailed Records (Process)
+                        # Now that we have the DEFINITIVE CIN
+                        print(f"[ENRICH] Fetching detail processes for {resolved_cin}")
+                        corporate_processes = self.fetch_corporate_process_data(resolved_cin)
+                        if corporate_processes:
+                            work_data = attach_corporate_process_data(work_data, corporate_processes)
+                    else:
+                        print(f"[ENRICH] Warning: Could not resolve CIN for {identifier}")
+
+                # 3. Parallel Step: News Fetching
+                print(f"[ENRICH] Fetching related news for {work_data.get('name')}")
+                try:
+                    ibbi_news = self.fetch_ibbi_news(work_data.get("name", ""))
+                    if ibbi_news:
+                        work_data["news"] = ibbi_news
+                except Exception as e:
+                    print(f"[ENRICH] News fetch error: {e}")
+
+
+                work_data["documents"] = build_company_documents(work_data)
+                inject_simulated_data(work_data)
+                
+                work_data = attach_company_freshness(
+                    work_data,
+                    snapshot_synced_at=self._stats.get("lastSyncedAt", "N/A"),
+                    profile_cached_at=cached_at,
+                )
+
+                # Update caches
+                if cache_key:
+                    self._profile_cache[cache_key] = {
+                        "data": work_data,
+                        "fetched_at": time.time(),
+                        "cached_at": cached_at,
+                    }
+                self._persist_company_detail(work_data)
+                print(f"[CACHE] Background enrichment completed for: {cache_key}")
+            except Exception as e:
+                print(f"[CACHE] Background enrichment failed for {cache_key}: {e}")
+
+        # 4. Handle Background vs Blocking
+        if background and not force:
+            print(f"[CACHE] Starting background enrichment for: {cache_key}")
+            import threading
+            threading.Thread(target=run_full_enrichment, args=(enriched,), daemon=True).start()
+            
+            # Return partial enriched data quickly
+            enriched["enrichmentInProgress"] = True
+            return attach_company_freshness(
+                enriched,
+                snapshot_synced_at=self._stats.get("lastSyncedAt", "N/A"),
+                profile_cached_at=cached_at
+            )
+        else:
+            # Blocking execution (requested fresh data)
+            run_full_enrichment(enriched)
+            return self._profile_cache[cache_key]["data"] if cache_key in self._profile_cache else enriched
+
+
 
     def search_claim_process(self, query: str, limit: int = 12) -> list[dict[str, str]]:
+        print(f"[API FETCH] Searching IBBI claims registry for query: {query}")
         response = self._session.get(
             IBBI_CLAIMS_SEARCH_URL,
             params={"corporate_debtor": clean_text(query)},
@@ -1137,6 +1990,12 @@ class IBBIDataCache:
 
 cache = IBBIDataCache()
 
+# ── Initialise MySQL database tables on startup ──────────────────
+try:
+    db_module.init_db()
+except Exception as _db_init_err:
+    print(f"[DB] MySQL init failed (data will still work from memory/JSON): {_db_init_err}")
+
 
 @app.get("/health")
 def health() -> dict[str, str]:
@@ -1190,6 +2049,16 @@ def search_realtime(
         cin = clean_text(row["cin"]).upper()
         if cin and cin not in existing_ids:
             matches.append(attach_company_source_metadata(build_claims_company_from_search_row(row)))
+            existing_ids.add(cin)
+
+    try:
+        live_public_company = cache.fetch_public_announcement_company(query)
+    except Exception:
+        live_public_company = None
+    if live_public_company:
+        live_tokens = company_identifier_tokens(live_public_company)
+        if not existing_ids.intersection(live_tokens):
+            matches.append(live_public_company)
 
     matches.sort(key=lambda company: rank_company(company, query), reverse=True)
     return matches[:limit]
@@ -1220,20 +2089,72 @@ def list_companies(
     return filtered[:limit]
 
 
+
+@app.get("/company/{id_or_cin}/claims/merged")
+def get_merged_claims(id_or_cin: str) -> list:
+    """Fetches all versions with summary tables."""
+    try:
+        company = get_company(id_or_cin)
+        cin = company.get("cin")
+    except Exception:
+        cin = id_or_cin.upper().replace('N/A', '')
+
+    if not cin: return []
+    v_url = f"{IBBI_CLAIMS_VERSION_URL}/{quote(cin)}"
+    try:
+        res = requests.get(v_url, timeout=REQUEST_TIMEOUT_SECONDS)
+        res.raise_for_status()
+    except Exception: return []
+
+    versions = parse_claim_version_rows(res.text)
+    merged = []
+    for v in versions:
+        d_id = v.get("detail_id")
+        if not d_id: continue
+        d_url = f"{IBBI_CLAIMS_DETAIL_URL}/{quote(d_id)}"
+        try:
+            d_res = requests.get(d_url, timeout=REQUEST_TIMEOUT_SECONDS)
+            if d_res.status_code == 200:
+                html = d_res.text
+                merged.append({
+                    "version": v.get("version"),
+                    "date": v.get("version_date"),
+                    "rp_name": v.get("rp_name"),
+                    "data": parse_claim_detail_inputs(html),
+                    "summaryTable": parse_claim_summary_table(html)
+                })
+        except Exception: continue
+    return merged
+
+
 @app.get("/company/{id_or_cin}")
 def get_company(id_or_cin: str, fresh: bool = Query(default=False)) -> dict[str, Any]:
+    # ── Try MySQL DB first (enriched profile) ─────────────────────
+    if not fresh:
+        try:
+            db_detail = db_module.get_company_detail(id_or_cin)
+            if db_detail:
+                return db_detail
+        except Exception as e:
+            print(f"[DB] get_company_detail error: {e}")
     companies, _, _ = cache.get_snapshot(force=fresh)
     target = clean_text(id_or_cin).upper()
 
     for company in companies:
         if company["id"].upper() == target or company["cin"].upper() == target or slugify(company["name"]).upper() == target:
-            return cache.enrich_company_profile(attach_company_source_metadata(company), force=fresh)
+            return cache.enrich_company_profile(attach_company_source_metadata(company), force=fresh, background=(not fresh))
+
+    public_company = cache.fetch_public_announcement_company(id_or_cin)
+    if public_company:
+        return cache.enrich_company_profile(public_company, force=fresh, background=(not fresh))
 
     claims_company = cache.fetch_claims_company(id_or_cin)
     if claims_company:
-        return cache.enrich_company_profile(claims_company, force=fresh)
+        return cache.enrich_company_profile(claims_company, force=fresh, background=(not fresh))
 
     raise HTTPException(status_code=404, detail="Company profile not found on IBBI.")
+
+
 
 
 @app.get("/company/{id_or_cin}/documents/profile.json")
@@ -1282,6 +2203,56 @@ def get_company_sources(id_or_cin: str, fresh: bool = Query(default=False)) -> l
     return company.get("dataSources", [])
 
 
+@app.post("/api/ai/chat")
+async def ai_chat_analysis(request: Request):
+    try:
+        body = await request.json()
+        query = body.get("query", "").lower()
+        company = body.get("company", {})
+        
+        company_name = company.get("name", "this company")
+        status = company.get("status", "Unknown")
+        cin = company.get("cin", "N/A")
+        announcements = company.get("announcementHistory", [])
+        num_charges = len(company.get("charges", []))
+        
+        # Simple logical reasoning engine to simulate AI
+        response = ""
+        
+        if "risk" in query or "safe" in query:
+            if status in ["Liquidation", "Dissolved"]:
+                response = f"Based on my analysis, {company_name} carries an **EXTREME risk profile**. It is currently in {status}, meaning original business operations have likely ceased and assets are being recovered for creditors."
+            elif status == "Under CIRP":
+                response = f"{company_name} is currently in the **Corporate Insolvency Resolution Process (CIRP)**. This is a medium-to-high risk stage where a resolution professional is actively seeking a turnaround plan. Its future depends on the CoC's approval of a resolution plan."
+            else:
+                response = f"The risk level for {company_name} is marked as **Moderate**. While it is listed in the insolvency registry, its specific status '{status}' suggests a transitional period."
+                
+
+                
+        elif "charge" in query or "loan" in query or "bank" in query:
+            if num_charges > 0:
+                response = f"I've detected {num_charges} financial charges on record for {company_name}. This indicates significant secured lending, likely from major banks, who will be primary members of the Committee of Creditors (CoC)."
+            else:
+                response = f"No significant active charges were found in this specific snapshot. This might mean the company has limited secured debt or the data hasn't been synced from the latest MCA records."
+        
+        elif "what" in query and ("do" in query or "happen" in query):
+            response = f"{company_name} (CIN: {cin}) is currently undergoing a legal process overseen by the IBBI. To date, there have been {len(announcements)} public announcements regarding its {status} status."
+            
+        else:
+            response = f"I am analyzing {company_name}. Regarding your question: '{query}', the records show it is a {company.get('type', 'company')} with {len(announcements)} recorded insolvency events. Would you like me to analyze its risk profile or financial charges specifically?"
+
+        # Add a delay to simulate "thinking"
+        await asyncio.sleep(1.2)
+        
+        return {
+            "answer": response,
+            "tokens_used": len(response) // 4 + 10,
+            "model": "fintech-iq-v1-simulated"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"AI Engine Error: {str(e)}")
+
+
 @app.get("/refresh")
 def refresh_cache() -> dict[str, Any]:
     companies, stats, announcements = cache.get_snapshot(force=True)
@@ -1293,6 +2264,263 @@ def refresh_cache() -> dict[str, Any]:
     }
 
 
+
+
+@app.post("/refresh-company/{id_or_cin}")
+def refresh_company(id_or_cin: str) -> dict[str, Any]:
+    """
+    Force-refresh a specific company from IBBI and persist to JSON database store.
+    """
+    try:
+        company = get_company(id_or_cin, fresh=True)
+        return {
+            "status": "refreshed",
+            "id": company.get("id"),
+            "name": company.get("name"),
+            "cin": company.get("cin"),
+            "lastSyncedAt": company.get("snapshotSyncedAt") or utc_now_iso(),
+            "documentsCount": len(company.get("documents", [])),
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Refresh failed: {clean_text(str(exc))}") from exc
+
+
+
+
+
+
+def scrape_professional_details_by_id(session: requests.Session, field_id: str) -> dict[str, Any]:
+    """
+    Fetches all sub-sections for a professional from IBBI details page.
+    """
+    sections = {
+        "IP Detail": "IP_Details",
+        "AFA Detail": "AFA_Details",
+        "Assignment Detail": "Assignment_Details",
+        "Assignment Analytics": "Assignment_Analytics",
+        "CPE Detail": "CPE_Details",
+        "Orders": "IPs_Order_Details",
+        "Professional Qualification": "qualifications",
+        "Work Experience": "work_experience"
+    }
+    
+    results = {"_scraped_at": datetime.now().isoformat()}
+    for label, section_type in sections.items():
+        try:
+            url = f"{IBBI_IP_DETAILS_URL}?fieldid={field_id}&type={section_type}"
+            resp = session.get(url, timeout=15)
+            if resp.ok:
+                soup = BeautifulSoup(resp.text, "html.parser")
+                tables = soup.find_all("table")
+                section_results = []
+                
+                for table in tables:
+                    tr_list = table.find_all("tr")
+                    if not tr_list:
+                        continue
+                        
+                    # 1. Peek at first row to determine if vertical or horizontal
+                    first_tr = tr_list[0]
+                    headers = [clean_text(th.get_text(" ", strip=True)) for th in first_tr.find_all("th")]
+                    
+                    if not headers:
+                        thead = table.find("thead")
+                        if thead:
+                            headers = [clean_text(th.get_text(" ", strip=True)) for th in thead.find_all("th")]
+                    
+                    if not headers:
+                        # Case: Vertical table (key-value pairs) or simple list
+                        rows: list[dict[str, str]] = []
+                        for tr in tr_list:
+                            cells = tr.find_all(["td", "th"])
+                            if len(cells) >= 2:
+                                k = clean_text(cells[0].get_text(" ", strip=True))
+                                v = clean_text(cells[1].get_text(" ", strip=True))
+                                # Filter out title rows with no value
+                                if k and (v or k.lower() != label.lower()):
+                                    rows.append({"label": k, "value": v if v else "-"})
+                        if rows:
+                            section_results.append({"type": "vertical", "data": rows})
+                    else:
+                        # Case: Horizontal table
+                        # Stripping the section title if it's the only header or first header
+                        if len(headers) > 1 and headers[0].lower() in [label.lower(), "afa details", "afa history"]:
+                             headers = headers[1:]
+
+                        rows: list[dict[str, str]] = []
+                        # Use tbody if available, otherwise skip first row (header row)
+                        tbody = table.find("tbody")
+                        data_rows = tbody.find_all("tr") if tbody else tr_list[1:]
+
+                        for tr in data_rows:
+                            cells = tr.find_all(["td", "th"])
+                            if len(cells) >= len(headers):
+                                offset = len(cells) - len(headers)
+                                row_data = {}
+                                for i, h in enumerate(headers):
+                                    row_data[h] = clean_text(cells[i+offset].get_text(" ", strip=True))
+                                if any(row_data.values()):
+                                    rows.append(row_data)
+                        
+                        if rows:
+                            section_results.append({"type": "horizontal", "headers": headers, "data": rows})
+                
+                if section_results:
+                    results[label] = section_results
+                else:
+                    results[label] = [{"type": "empty", "message": "No data found in this section."}]
+            else:
+                results[label] = [{"type": "error", "message": f"Failed to fetch section (HTTP {resp.status_code})"}]
+        except Exception as e:
+            results[label] = [{"type": "error", "message": str(e)}]
+            
+    return results
+
+
+PROF_METADATA_PATH = BASE_DIR.parent / "database" / "professional_metadata.json"
+PROF_CACHE_PATH = BASE_DIR.parent / "database" / "professional_cache.json"
+
+def get_prof_metadata(name: str) -> dict[str, Any]:
+    if not PROF_METADATA_PATH.exists():
+        return {"links": []}
+    try:
+        with open(PROF_METADATA_PATH, "r") as f:
+            data = json.load(f)
+            return data.get(name, {"links": []})
+    except Exception:
+        return {"links": []}
+
+def save_prof_metadata(name: str, metadata: dict[str, Any]):
+    PROF_METADATA_PATH.parent.mkdir(parents=True, exist_ok=True)
+    current_data = {}
+    if PROF_METADATA_PATH.exists():
+        try:
+            with open(PROF_METADATA_PATH, "r") as f:
+                current_data = json.load(f)
+        except Exception:
+            pass
+    current_data[name] = metadata
+    with open(PROF_METADATA_PATH, "w") as f:
+        json.dump(current_data, f, indent=2)
+
+def get_cached_profile(name: str) -> Optional[dict[str, Any]]:
+    if not PROF_CACHE_PATH.exists():
+        return None
+    try:
+        with open(PROF_CACHE_PATH, "r") as f:
+            cache = json.load(f)
+            entry = cache.get(name)
+            if entry:
+                # Check TTL
+                scraped_at = datetime.fromisoformat(entry["_scraped_at"])
+                if (datetime.now() - scraped_at).total_seconds() < PROFILE_CACHE_TTL_SECONDS:
+                    return entry
+    except Exception:
+        pass
+    return None
+
+def save_profile_cache(name: str, data: dict[str, Any]):
+    PROF_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    cache = {}
+    if PROF_CACHE_PATH.exists():
+        try:
+            with open(PROF_CACHE_PATH, "r") as f:
+                cache = json.load(f)
+        except Exception:
+            pass
+    cache[name] = data
+    with open(PROF_CACHE_PATH, "w") as f:
+        json.dump(cache, f, indent=2)
+
+@app.get("/professional/{name}/metadata")
+def get_professional_metadata_route(name: str):
+    return get_prof_metadata(name)
+
+@app.post("/professional/{name}/metadata")
+async def save_professional_metadata_route(name: str, request: Request):
+    try:
+        metadata = await request.json()
+        save_prof_metadata(name, metadata)
+        return {"status": "saved"}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/professional/{name}")
+def get_professional_details(name: str):
+    """
+    Search for a professional by name and scrape their full profile from IBBI.
+    """
+    try:
+        # 0. Check Cache
+        cached = get_cached_profile(name)
+        if cached:
+            return cached
+
+        session = requests.Session()
+        session.headers.update({
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+        })
+        
+        # 1. Search for name
+        search_url = f"{IBBI_IP_REGISTER_URL}?name_ip={quote(name)}"
+        resp = session.get(search_url, timeout=20)
+        if not resp.ok:
+            raise HTTPException(status_code=502, detail=f"IBBI search page offline (HTTP {resp.status_code})")
+        
+        soup = BeautifulSoup(resp.text, "html.parser")
+        # Find the link to details
+        link_tag = soup.find("a", href=re.compile(r"insolvency-professional/details\?fieldid="))
+        
+        if not link_tag:
+            # Try a fuzzy match in table if link regex was too strict
+            table = soup.find("table")
+            if table:
+                for a in table.find_all("a", href=True):
+                    if "details?fieldid=" in a['href']:
+                        link_tag = a
+                        break
+        
+        if not link_tag:
+            return {
+                "name": name,
+                "found": False,
+                "message": f"Could not find a professional matching '{name}' in IBBI register."
+            }
+        
+        # 2. Extract fieldid
+        href = link_tag['href']
+        match = re.search(r"fieldid=([^&]+)", href)
+        if not match:
+            raise HTTPException(status_code=500, detail="Could not extract professional ID from IBBI search result.")
+        
+        field_id = match.group(1)
+        
+        # 3. Scrape all details
+        details = scrape_professional_details_by_id(session, field_id)
+        
+        response_data = {
+            "name": name,
+            "field_id": field_id,
+            "found": True,
+            "_scraped_at": datetime.now().isoformat(),
+            "profile_url": f"https://ibbi.gov.in/insolvency-professional/details?fieldid={field_id}",
+            "sections": details
+        }
+        
+        # 4. Save to Cache
+        save_profile_cache(name, response_data)
+        
+        return response_data
+        
+    except Exception as e:
+        print(f"Professional scrape error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Scraper error: {str(e)}")
+
+
 if __name__ == "__main__":
+
     print("fintech API starting on http://localhost:8005")
     uvicorn.run(app, host="0.0.0.0", port=8005)

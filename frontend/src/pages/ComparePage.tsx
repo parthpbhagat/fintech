@@ -34,7 +34,11 @@ const compareFilters = {
 } as const;
 
 const currencyFormatter = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 });
-const moneyOrNa = (value: number) => (value ? `Rs ${currencyFormatter.format(value)}` : "N/A");
+const moneyOrNa = (value: number) => {
+  if (!value) return "N/A";
+  const cr = value / 10000000;
+  return `₹ ${cr.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Cr`;
+};
 
 type CompareRowConfig = {
   label: string;
@@ -128,21 +132,6 @@ const compareRowConfigs: CompareRowConfig[] = [
   },
   {
     label: "Authorised Capital",
-    getValue: (company) => (company.authCap ? `Rs ${currencyFormatter.format(company.authCap)}` : "N/A"),
-    shouldShow: (companies) => companies.some((company) => company.authCap > 0),
-    description: "Authorised capital fetched from public company profile sources when available.",
-  },
-  {
-    label: "Paid Up Capital",
-    getValue: (company) => (company.puc ? `Rs ${currencyFormatter.format(company.puc)}` : "N/A"),
-    shouldShow: (companies) => companies.some((company) => company.puc > 0),
-    description: "Paid up capital fetched from public company profile sources when available.",
-  },
-  {
-    label: "Last AGM",
-    getValue: (company) => company.lastAGMDate || "N/A",
-    shouldShow: (companies) => companies.some((company) => hasMeaningfulText(company.lastAGMDate || "")),
-    description: "Latest AGM filing date currently available for the company.",
   },
   {
     label: "Last B/S",

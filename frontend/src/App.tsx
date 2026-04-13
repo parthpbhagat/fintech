@@ -6,7 +6,6 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import Index from "./pages/Index.tsx";
 import CompanyDetail from "./pages/CompanyDetail.tsx";
 import ComparePage from "./pages/ComparePage.tsx";
-import NewsPage from "./pages/NewsPage.tsx";
 import NotFound from "./pages/NotFound.tsx";
 
 import { AuthProvider } from "./contexts/AuthContext";
@@ -28,7 +27,6 @@ const App = () => (
                 <Route path="/" element={<Index />} />
                 <Route path="/company/:id" element={<CompanyDetail />} />
                 <Route path="/compare" element={<ComparePage />} />
-                <Route path="/news" element={<NewsPage />} />
                 <Route path="*" element={<NotFound />} />
               </Routes>
             </main>

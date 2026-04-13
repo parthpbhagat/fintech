@@ -11,14 +11,17 @@ import {
   SlidersHorizontal,
   Search,
   ShieldCheck,
+  Sparkles,
   UserRound,
+  RefreshCw,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { fetchIBBIFeaturedCompanies, fetchIBBIStats, IbbiApiError, searchIBBICompanies } from "@/services/ibbiService";
+import { fetchIBBIFeaturedCompanies, fetchIBBIStats, IbbiApiError, searchIBBICompanies, triggerGlobalRefresh } from "@/services/ibbiService";
 import { StatusBadge } from "@/components/Navbar";
 import { useAuth } from "@/contexts/AuthContext";
 import type { Company } from "@/data/types";
+import AIChatAssistant from "@/components/AIChatAssistant";
 
 const numberFormatter = new Intl.NumberFormat("en-IN");
 const searchModes = [
@@ -91,6 +94,7 @@ const Index = () => {
   const [statusFilter, setStatusFilter] = useState("All");
   const [typeFilter, setTypeFilter] = useState("All");
   const [sourceFilter, setSourceFilter] = useState("All");
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const { authUser, setIsAuthDialogOpen } = useAuth();
   const [authPrefill, setAuthPrefill] = useState<{
     mode?: "login" | "signup" | "forgot";
@@ -119,6 +123,19 @@ const Index = () => {
     queryFn: fetchIBBIStats,
     retry: false,
   });
+
+  const handleRefreshData = async () => {
+    setIsRefreshing(true);
+    try {
+      await triggerGlobalRefresh();
+      // Reload the page to fetch latest stats and companies
+      window.location.reload();
+    } catch (error) {
+      console.error("Refresh failed", error);
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
 
   const quickSearches = featuredCompanies.slice(0, 10);
   const normalizedQuery = query.trim();
@@ -191,7 +208,7 @@ const Index = () => {
     }
 
     navigate({ pathname: location.pathname }, { replace: true });
-  }, [location.pathname, location.search, navigate]);
+  }, [location.pathname, location.search, navigate, setAuthPrefill, setIsAuthDialogOpen]);
 
   useEffect(() => {
     if (normalizedQuery.length < 2) {
@@ -283,9 +300,7 @@ const Index = () => {
   const runLiveSearch = () => {
     if (query.trim().length >= 2) {
       void runSearch();
-      return;
     }
-    navigate("/news");
   };
 
   const openSearchMode = (modeId: SearchModeId) => {
@@ -326,14 +341,20 @@ const Index = () => {
   return (
     <div className="bg-white font-sans">
 
-      <section className="py-10 md:py-12 flex flex-col items-center justify-center bg-[linear-gradient(180deg,#f2f6fd_0%,#ffffff_58%)] px-4">
-        <div className="mb-6 text-center">
-          <p className="text-[11px] font-bold uppercase tracking-[0.32em] text-[#81BC06]">Fintech Data Hub</p>
-          <h1 className="mt-2 text-3xl md:text-4xl font-black tracking-tight text-slate-900">
-            Search insolvency records
+      <section className="relative py-16 md:py-24 flex flex-col items-center justify-center bg-[#F8FAFC] overflow-hidden">
+        <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(circle_at_30%_20%,#81BC0615_0%,transparent_40%),radial-gradient(circle_at_70%_60%,#1f8bff10_0%,transparent_40%)]" />
+        
+        <div className="mb-8 text-center relative z-10 px-4">
+          <div className="inline-flex items-center gap-2 rounded-full bg-[#81BC06]/10 px-4 py-1.5 text-[10px] font-black uppercase tracking-[0.2em] text-[#81BC06] mb-6">
+            <Sparkles className="h-3 w-3" />
+            Empowering Modern Fintech Analysis
+          </div>
+          <h1 className="mt-2 text-4xl md:text-5xl font-black tracking-tight text-slate-900 leading-[1.1]">
+            Intelligent Corporate <br />
+            <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#81BC06] to-[#A3D93F]">Insights & Analytics</span>
           </h1>
-          <p className="mt-2 max-w-2xl text-sm text-slate-500">
-            Finanvo-style experience, but powered fully by the live IBBI public announcement registry.
+          <p className="mt-6 max-w-2xl text-base md:text-lg text-slate-500 font-medium">
+            Live IBBI registry analysis and risk assessment tools for smarter business decisions.
           </p>
         </div>
 
@@ -492,6 +513,14 @@ const Index = () => {
           >
             Compare Two Companies
           </Button>
+          <Button
+            onClick={handleRefreshData}
+            disabled={isRefreshing}
+            className="rounded-full bg-[#81BC06] text-white px-4 text-[11px] font-bold uppercase hover:bg-[#6ea105] shadow-md border-0"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 mr-2 ${isRefreshing ? "animate-spin" : ""}`} />
+            {isRefreshing ? "Refreshing..." : "Refresh Data"}
+          </Button>
         </div>
       </section>
 
@@ -513,7 +542,7 @@ const Index = () => {
           <ActionItem icon={<Building2 className="w-10 h-10 text-slate-500" />} label="Check Corporate Debtor" onClick={() => openSearchMode("company")} />
           <ActionItem icon={<Landmark className="w-10 h-10 text-slate-500" />} label="Track Applicant" onClick={() => openSearchMode("applicant")} />
           <ActionItem icon={<UserRound className="w-10 h-10 text-slate-500" />} label="Review IP Details" onClick={() => openSearchMode("ip")} />
-          <ActionItem icon={<ShieldCheck className="w-10 h-10 text-slate-500" />} label="Follow Insolvency Timeline" onClick={() => navigate("/news")} />
+          <ActionItem icon={<ShieldCheck className="w-10 h-10 text-slate-500" />} label="Quick Search" onClick={() => focusSearchInput()} />
         </div>
       </section>
 
@@ -625,6 +654,7 @@ const Index = () => {
           <p className="font-bold text-slate-800">Search, inspect, and review insolvency timelines faster</p>
         </div>
       </footer>
+      <AIChatAssistant />
     </div>
   );
 };

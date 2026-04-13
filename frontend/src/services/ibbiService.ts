@@ -139,3 +139,99 @@ export const fetchIBBIRecentAnnouncements = async (limit = 18): Promise<NewsItem
   const data = await fetchJson<unknown>(`/recent-announcements?limit=${limit}`);
   return ensureArray<NewsItem>(data, "/recent-announcements");
 };
+
+/**
+ * Forces a fresh scrape of a company's data from IBBI and saves it to the database.
+ * Returns the updated company profile.
+ */
+export const refreshCompanyData = async (
+  idOrCin: string,
+): Promise<Company | null> => {
+  try {
+    return await fetchJson<Company>(
+      `/company/${encodeURIComponent(idOrCin)}${buildQueryString({ fresh: 1 })}`,
+      { cache: "no-store" },
+    );
+  } catch (error) {
+    console.error("Failed to refresh company data from IBBI.", error);
+    return null;
+  }
+};
+
+/**
+ * Triggers a global cache refresh on the backend — re-scrapes all IBBI data
+ * and updates the in-memory snapshot and JSON database store.
+ */
+export const triggerGlobalRefresh = async (): Promise<{
+  status: string;
+  companies: number;
+  announcements: number;
+  lastSyncedAt: string;
+} | null> => {
+  try {
+    return await fetchJson(`/refresh`);
+  } catch (error) {
+    console.error("Global refresh failed.", error);
+    return null;
+  }
+};
+
+/**
+ * Fetches all claim versions aggregated together for a specific company.
+ * Used for combined PDF report generation.
+ */
+
+export const fetchMergedClaims = async (idOrCin: string): Promise<any[]> => {
+  try {
+    const data = await fetchJson<unknown>(`/company/${encodeURIComponent(idOrCin)}/claims/merged`);
+    return ensureArray<any>(data, "/claims/merged");
+  } catch (error) {
+    console.error("Merged claims fetch failed.", error);
+    return [];
+  }
+};
+
+
+/**
+ * Fetches all professional details for a given IP name from the backend scraper.
+ */
+export const fetchProfessionalDetails = async (name: string): Promise<any> => {
+  try {
+    return await fetchJson(`/professional/${encodeURIComponent(name)}`);
+  } catch (error) {
+    console.error(`Failed to fetch professional details for ${name}:`, error);
+    return { found: false, error: String(error) };
+  }
+};
+
+/**
+ * Fetches custom metadata (links, etc.) for a professional.
+ */
+export const fetchProfessionalMetadata = async (name: string): Promise<any> => {
+  try {
+    return await fetchJson(`/professional/${encodeURIComponent(name)}/metadata`);
+  } catch (error) {
+    console.error(`Failed to fetch metadata for ${name}:`, error);
+    return { links: [] };
+  }
+};
+
+/**
+ * Updates custom metadata for a professional.
+ */
+export const updateProfessionalMetadata = async (name: string, data: any): Promise<boolean> => {
+  try {
+    await fetchJson(`/professional/${encodeURIComponent(name)}/metadata`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    });
+    return true;
+  } catch (error) {
+    console.error(`Failed to save metadata for ${name}:`, error);
+    return false;
+  }
+};
+
+
+

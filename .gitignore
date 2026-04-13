@@ -28,6 +28,7 @@ frontend/dist-ssr/
 __pycache__/
 *.py[cod]
 *$py.class
+**/__pycache__/
 
 # Backend data & secrets
 backend/.env
@@ -38,6 +39,10 @@ backend/data/*.json
 
 # Database
 database/*.db
+database/professional_cache.json
 
 # Codex temp
 .codex-temp/
+
+# Temp
+tmp/
