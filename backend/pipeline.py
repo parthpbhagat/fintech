@@ -38,6 +38,7 @@ IBBI_CLAIMS_SEARCH_URL = "https://ibbi.gov.in/claims/claim-process"
 IBBI_CLAIMS_VERSION_URL = "https://ibbi.gov.in/claims/version-details"
 IBBI_CLAIMS_DETAIL_URL = "https://ibbi.gov.in/claims/frontClaimDetails"
 IBBI_CLAIMS_INNER_PROCESS_URL = "https://ibbi.gov.in/claims/innerProcess"
+IBBI_CLAIMS_AJAX_URL = "https://ibbi.gov.in/claims/front-claim-details-ajax"
 IBBI_CLAIMS_PUBLIC_PROCESS_URL = "https://ibbi.gov.in/claims/pubProcess"
 IBBI_CLAIMS_PROCESS_LIST_URL = "https://ibbi.gov.in/claims/claimProcess"
 IBBI_CLAIMS_RP_PROCESS_URL = "https://ibbi.gov.in/claims/rpProcess"
@@ -46,6 +47,17 @@ IBBI_CLAIMS_AUCTION_NOTICE_PROCESS_URL = "https://ibbi.gov.in/claims/auctionNoti
 IBBI_PRESS_RELEASES_URL = "https://ibbi.gov.in/media/press-releases"
 IBBI_IP_REGISTER_URL = "https://ibbi.gov.in/ips-register/view-ip/1"
 IBBI_IP_DETAILS_URL = "https://ibbi.gov.in/insolvency-professional/details"
+
+# ── Claims Category Mapping for Deep Scraping (IBBI Form Mapping) ─────────────
+CLAIMS_CATEGORY_MAPPINGS = {
+    "secured financial creditors": 3,
+    "unsecured financial creditors": 4,
+    "operational creditors (workmen)": 5,
+    "operational creditors (employees)": 6,
+    "operational creditors (government dues)": 7,
+    "operational creditors (other than workmen, employees and government dues)": 8,
+    "other stakeholders": 9,
+}
 
 BASE_DIR = Path(__file__).resolve().parent
 COMPANY_DETAIL_STORE_PATH = BASE_DIR.parent / "database" / "company_details_store.json"
@@ -740,6 +752,69 @@ def parse_claim_detail_inputs(html: str) -> dict[str, str]:
     return values
 
 
+def scrape_claim_category_details(session: requests.Session, detail_id: str, category_type: int, referer: str) -> list[dict[str, Any]]:
+    """Fetches detailed creditor lists for a specific category via IBBI AJAX POST with session awareness."""
+    url = IBBI_CLAIMS_AJAX_URL
+    payload = {
+        "pubProcessId": detail_id,
+        "type": category_type,
+        "id": detail_id
+    }
+    
+    # Headers required to bypass 403 Forbidden
+    headers = {
+        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+        "X-Requested-With": "XMLHttpRequest",
+        "Referer": referer,
+        "Origin": "https://ibbi.gov.in"
+    }
+
+    try:
+        resp = session.post(url, data=payload, headers=headers, timeout=20)
+        if resp.status_code != 200:
+            print(f"  AJAX Error: {resp.status_code} for Type {category_type}")
+            return []
+        
+        # Parse JSON response
+        try:
+            json_data = resp.json()
+            if isinstance(json_data, list):
+                return json_data
+            if isinstance(json_data, dict) and "data" in json_data:
+                return json_data["data"]
+        except:
+            # Fallback to HTML parsing if they return a partial table
+            html = resp.text
+            soup = BeautifulSoup(html, "html.parser")
+            table = soup.find("table")
+            if not table:
+                return []
+
+            headers_list = []
+            thead = table.find("thead") or table.find("tr")
+            if thead:
+                headers_list = [clean_text(th.get_text(" ", strip=True)) for th in thead.find_all(["th", "td"])]
+
+            rows = []
+            tbody = table.find("tbody")
+            tr_list = tbody.find_all("tr") if tbody else table.find_all("tr")[1:]
+
+            for tr in tr_list:
+                cells = tr.find_all(["td", "th"])
+                if len(cells) >= len(headers_list) and headers_list:
+                    row_data = {}
+                    for i, h in enumerate(headers_list):
+                        if i < len(cells):
+                            val = clean_text(cells[i].get_text(" ", strip=True))
+                            row_data[h] = val
+                    if any(row_data.values()):
+                        rows.append(row_data)
+            return rows
+    except Exception as e:
+        print(f"Error scraping claim category {category_type} (POST): {e}")
+        return []
+
+
 def build_claims_registry_url(cin: str) -> str:
     return f"{IBBI_CLAIMS_VERSION_URL}/{quote(cin)}"
 
@@ -1352,6 +1427,136 @@ def inject_simulated_data(company: dict[str, Any]) -> None:
 
 
 
+
+class SyncManager:
+    """Manages background synchronization and batch enrichment of companies."""
+    def __init__(self, cache_ref: 'IBBIDataCache'):
+        self.cache = cache_ref
+        self.active_job: dict[str, Any] | None = None
+        self.logs: list[dict] = []
+        self._lock = Lock()
+        self.log_path = BASE_DIR.parent / "database" / "sync_logs.json"
+        self._load_logs()
+
+    def _load_logs(self):
+        if self.log_path.exists():
+            try:
+                with open(self.log_path, 'r') as f:
+                    data = json.load(f)
+                    self.logs = data if isinstance(data, list) else []
+            except Exception: self.logs = []
+
+    def _save_logs(self):
+        try:
+            self.log_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(self.log_path, 'w') as f:
+                json.dump(self.logs[-50:], f, indent=2)
+        except Exception: pass
+
+    def start_full_sync(self):
+        with self._lock:
+            if self.active_job and self.active_job['status'] == 'running':
+                return self.active_job
+            
+            self.active_job = {
+                "id": f"sync-{int(time.time())}",
+                "status": "running",
+                "progress": 0,
+                "total": 0,
+                "success": 0,
+                "failed": 0,
+                "skipped": 0,
+                "startTime": utc_now_iso(),
+                "endTime": None,
+                "message": "Initializing full sync..."
+            }
+            import threading
+            threading.Thread(target=self._run_sync, daemon=True).start()
+            return self.active_job
+
+    def get_status(self):
+        with self._lock:
+            return {
+                "activeJob": self.active_job,
+                "recentLogs": self.logs[-10:]
+            }
+
+    def _run_sync(self):
+        try:
+            # 1. Refresh background announcement snapshot first (fast)
+            print("[SYNC] Starting announcement snapshot refresh...")
+            self.cache.get_snapshot(force=True)
+            companies = self.cache._companies
+            
+            if not companies:
+                raise Exception("No companies found to sync.")
+
+            with self._lock:
+                self.active_job['total'] = len(companies)
+                self.active_job['message'] = f"Syncing {len(companies)} companies..."
+
+            # 2. Batch process enrichment
+            batch_size = 4 # Conservative batch size
+            for i in range(0, len(companies), batch_size):
+                batch = companies[i:i+batch_size]
+                futures = []
+                with concurrent.futures.ThreadPoolExecutor(max_workers=batch_size) as executor:
+                    for company in batch:
+                        futures.append(executor.submit(self._enrich_if_needed, company))
+                    
+                    for future in concurrent.futures.as_completed(futures):
+                        res = future.result()
+                        with self._lock:
+                            self.active_job['progress'] += 1
+                            if res == 'success': self.active_job['success'] += 1
+                            elif res == 'skipped': self.active_job['skipped'] += 1
+                            else: self.active_job['failed'] += 1
+                
+                # Small pause between batches to avoid IP rate limiting
+                time.sleep(1.0)
+
+            with self._lock:
+                self.active_job['status'] = 'completed'
+                self.active_job['endTime'] = utc_now_iso()
+                self.active_job['message'] = f"Completed: {self.active_job['success']} enriched, {self.active_job['skipped']} skipped."
+                self.logs.append(dict(self.active_job))
+                self._save_logs()
+
+        except Exception as e:
+            with self._lock:
+                self.active_job['status'] = 'failed'
+                self.active_job['endTime'] = utc_now_iso()
+                self.active_job['message'] = f"Critical sync failure: {str(e)}"
+                self.logs.append(dict(self.active_job))
+                self._save_logs()
+
+    def _enrich_if_needed(self, company: dict) -> str:
+        try:
+            # Incremental Logic (Fast Path)
+            target_key = clean_text(company.get('cin') or company.get('id')).upper()
+            db_record = db_module.get_company_detail(target_key)
+            
+            if db_record:
+                # If we have an announcement history, check if it's potentially outdated
+                db_anns = db_record.get('announcementHistory', [])
+                current_anns = company.get('announcementHistory', [])
+                
+                # Check for announcement count match
+                if len(db_anns) > 0 and len(db_anns) == len(current_anns):
+                    # Check latest announcement date
+                    db_latest = db_anns[0].get('announcementDate')
+                    curr_latest = current_anns[0].get('announcementDate') if current_anns else None
+                    if db_latest == curr_latest:
+                        return 'skipped'
+            
+            # Slow Path: Full Scraping Enrichment
+            self.cache.enrich_company_profile(company, force=True)
+            return 'success'
+        except Exception as e:
+            print(f"[SYNC] Error enriching {company.get('name')}: {e}")
+            return 'failed'
+
+
 class IBBIDataCache:
     def __init__(self) -> None:
         self._lock = Lock()
@@ -1380,6 +1585,7 @@ class IBBIDataCache:
         self._profile_cache: dict[str, dict[str, Any]] = {}
         self._geocode_cache: dict[str, dict[str, Any]] = {}
         self._persisted_company_details: dict[str, dict[str, Any]] = load_persisted_company_details()
+        self.sync_manager = SyncManager(self)
 
     def get_snapshot(self, force: bool = False) -> tuple[list[dict[str, Any]], dict[str, Any], list[dict[str, Any]]]:
         with self._lock:
@@ -2092,7 +2298,7 @@ def list_companies(
 
 @app.get("/company/{id_or_cin}/claims/merged")
 def get_merged_claims(id_or_cin: str) -> list:
-    """Fetches all versions with summary tables."""
+    """Fetches all versions with full summary and detailed claimant tables using a session."""
     try:
         company = get_company(id_or_cin)
         cin = company.get("cin")
@@ -2100,11 +2306,21 @@ def get_merged_claims(id_or_cin: str) -> list:
         cin = id_or_cin.upper().replace('N/A', '')
 
     if not cin: return []
+    
+    session = requests.Session()
+    session.headers.update({
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+    })
+
     v_url = f"{IBBI_CLAIMS_VERSION_URL}/{quote(cin)}"
     try:
-        res = requests.get(v_url, timeout=REQUEST_TIMEOUT_SECONDS)
+        res = session.get(v_url, timeout=REQUEST_TIMEOUT_SECONDS)
         res.raise_for_status()
-    except Exception: return []
+    except Exception as e:
+        print(f"Error fetching versions for {cin}: {e}")
+        return []
 
     versions = parse_claim_version_rows(res.text)
     merged = []
@@ -2113,17 +2329,49 @@ def get_merged_claims(id_or_cin: str) -> list:
         if not d_id: continue
         d_url = f"{IBBI_CLAIMS_DETAIL_URL}/{quote(d_id)}"
         try:
-            d_res = requests.get(d_url, timeout=REQUEST_TIMEOUT_SECONDS)
+            # 1. Get the detail page to establish session/cookies for this version
+            d_res = session.get(d_url, timeout=REQUEST_TIMEOUT_SECONDS)
             if d_res.status_code == 200:
                 html = d_res.text
+                summary = parse_claim_summary_table(html)
+                
+                # Perform deep scraping for each category in the summary
+                details = {}
+                for row in summary:
+                    # Clean the category name for matching
+                    cat_name_raw = row.get("category", "")
+                    cat_name = clean_text(cat_name_raw).lower()
+                    
+                    # Match name to IBBI category ID
+                    cat_id = None
+                    for key, mapped_id in CLAIMS_CATEGORY_MAPPINGS.items():
+                        if key in cat_name:
+                            cat_id = mapped_id
+                            break
+                    
+                    if cat_id:
+                        print(f"Deep scraping: {cat_name_raw} (ID: {cat_id}) for version {v.get('version')}...")
+                        # Pass session and referer to bypass 403
+                        claimants = scrape_claim_category_details(session, d_id, cat_id, d_url)
+                        if claimants:
+                            # Use the actual keys from the first row if available
+                            headers = list(claimants[0].keys()) if claimants else []
+                            details[cat_name_raw] = {
+                                "headers": headers,
+                                "rows": claimants
+                            }
+
                 merged.append({
                     "version": v.get("version"),
                     "date": v.get("version_date"),
                     "rp_name": v.get("rp_name"),
                     "data": parse_claim_detail_inputs(html),
-                    "summaryTable": parse_claim_summary_table(html)
+                    "summaryTable": summary,
+                    "details": details
                 })
-        except Exception: continue
+        except Exception as e:
+            print(f"Error merging claim version {v.get('version')}: {e}")
+            continue
     return merged
 
 
@@ -2285,6 +2533,21 @@ def refresh_company(id_or_cin: str) -> dict[str, Any]:
         raise
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Refresh failed: {clean_text(str(exc))}") from exc
+
+
+
+
+@app.post("/sync/full")
+def trigger_full_sync():
+    """Starts a global parallel sync of all companies."""
+    job = cache.sync_manager.start_full_sync()
+    return job
+
+
+@app.get("/sync/status")
+def get_sync_status():
+    """Returns progress of the active sync job and historical logs."""
+    return cache.sync_manager.get_status()
 
 
 

@@ -142,7 +142,7 @@ const CompanyDetail = () => {
 
   return (
     <div className="bg-[#F4F7F9] min-h-screen">
-      <div className="container mx-auto px-4 py-8">
+      <div className="container mx-auto px-4 py-4">
         <IBBICorporateProcess company={company} />
       </div>
       <AIChatAssistant company={company} />

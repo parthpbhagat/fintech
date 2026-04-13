@@ -25,7 +25,7 @@ const App = () => (
             <main className="flex-1">
               <Routes>
                 <Route path="/" element={<Index />} />
-                <Route path="/company/:id" element={<CompanyDetail />} />
+                <Route path="/company/:id/:slug?" element={<CompanyDetail />} />
                 <Route path="/compare" element={<ComparePage />} />
                 <Route path="*" element={<NotFound />} />
               </Routes>

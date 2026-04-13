@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import {
   Download,
   ChevronRight,
@@ -23,6 +23,8 @@ import {
   Info,
   Trash2,
   Link as LinkIcon,
+  ArrowUp,
+  LayoutList,
 } from "lucide-react";
 import {
   BarChart,
@@ -36,13 +38,15 @@ import {
   Cell
 } from "recharts";
 import { useQuery } from "@tanstack/react-query";
+import { useNavigate, useParams } from "react-router-dom";
 import type { Company, CorporateProcessRow, CorporateProcessSection } from "@/data/types";
 import {
   API_BASE_URL,
   fetchIBBICompanyDetails,
   fetchProfessionalDetails,
   fetchProfessionalMetadata,
-  updateProfessionalMetadata
+  updateProfessionalMetadata,
+  fetchMergedClaims
 } from "@/services/ibbiService";
 
 interface IBBICorporateProcessProps {
@@ -55,6 +59,13 @@ const formatToCr = (amount?: number) => {
   const cr = amount / 10000000;
   return `₹ ${cr.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Cr`;
 };
+
+const slugify = (text: string) =>
+  text
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "");
 
 // ── Resolve relative backend doc URLs ──────────────────────────────────────
 
@@ -113,21 +124,21 @@ const getFileInfo = (doc: { fileType?: string; url?: string; fileName: string })
 
 // ── Sub-components ──────────────────────────────────────────────────────────
 const TabLoader = () => (
-  <div className="py-12 flex flex-col items-center gap-3 text-slate-400">
+  <div className="py-6 flex flex-col items-center gap-3 text-slate-400">
     <Loader2 className="w-6 h-6 animate-spin" />
     <p className="text-sm">Loading data...</p>
   </div>
 );
 
 const TabError = ({ message }: { message: string }) => (
-  <div className="py-12 flex flex-col items-center gap-3 text-amber-600">
+  <div className="py-6 flex flex-col items-center gap-3 text-amber-600">
     <AlertTriangle className="w-6 h-6" />
     <p className="text-sm text-center max-w-md">{message}</p>
   </div>
 );
 
 const EmptyTab = ({ tab }: { tab: string }) => (
-  <div className="py-14 text-center border border-dashed border-slate-200 rounded bg-slate-50 text-slate-400">
+  <div className="py-8 text-center border border-dashed border-slate-200 rounded bg-slate-50 text-slate-400">
     No data currently available for the{" "}
     <strong className="text-slate-600">{tab}</strong> section.
   </div>
@@ -165,7 +176,7 @@ const ProcessTable = ({ section }: { section: CorporateProcessSection }) => {
   return (
     <div className="overflow-x-auto border border-slate-300 rounded">
       <table className="w-full text-left text-sm min-w-[820px]">
-        <thead className="bg-[#002D62] text-white">
+        <thead className="bg-slate-900 text-white">
           <tr>
             {section.headers.map((header) => (
               <th key={header} className="p-2.5 font-bold border-r border-blue-700 last:border-r-0">
@@ -220,20 +231,260 @@ const AssignmentAnalyticsSummary = ({ data }: { data: any[] }) => {
   if (!summary) return null;
 
   return (
-    <div className="bg-gradient-to-r from-[#002D62] to-[#004a8f] p-5 rounded-xl text-white shadow-lg mb-6 border-l-4 border-[#81BC06]">
+    <div className="bg-gradient-to-r from-[#002D62] to-[#004a8f] p-5 rounded-xl text-white shadow-lg mb-6 border-l-4 border-primary">
       <div className="flex items-start gap-4">
         <div className="bg-white/10 p-3 rounded-lg flex-shrink-0">
-          <Info className="w-5 h-5 text-[#81BC06]" />
+          <Info className="w-5 h-5 text-primary" />
         </div>
         <div className="space-y-1">
           <h5 className="text-[10px] font-black uppercase tracking-[0.2em] text-blue-200/70">Overall Professional Insight</h5>
           <p className="text-sm font-medium leading-relaxed">
-            This professional has handled <span className="text-[#81BC06] font-bold">{summary.total}</span> total assignments
+            This professional has handled <span className="text-primary font-bold">{summary.total}</span> total assignments
             across <span className="font-bold">{summary.activeSpan}</span>. Their most frequent role is as a
             <span className="text-yellow-400 font-bold"> {summary.topRole.role}</span> ({summary.topRole.count} cases).
             Ongoing activity was observed as recently as <span className="font-bold">{summary.recentYear}</span>.
           </p>
         </div>
+      </div>
+    </div>
+  );
+};
+
+// ── Main Component ──────────────────────────────────────────────────────────
+
+// ── Claims Detailed View Components ──────────────────────────────────────────
+
+const ClaimsSubNavigation = ({ versions, onSelect }: { versions: any[], onSelect: (id: string) => void }) => {
+  return (
+    <div className="mb-8">
+      <div className="flex items-center gap-2 mb-4 text-slate-500">
+        <LayoutList className="w-4 h-4" />
+        <span className="text-[10px] font-bold uppercase tracking-widest">Available Claim Versions</span>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+        {versions.map((v, idx) => (
+          <button
+            key={idx}
+            onClick={() => onSelect(`claim-version-${idx}`)}
+            className="group flex flex-col p-4 bg-slate-50 border border-slate-200 rounded-xl hover:border-primary hover:bg-white hover:shadow-md transition-all text-left"
+          >
+            <div className="flex items-center justify-between mb-2">
+              <span className="px-2 py-0.5 bg-slate-900 text-white text-[9px] font-bold rounded uppercase tracking-tighter">
+                {v.version || `Version ${idx + 1}`}
+              </span>
+              <ArrowRight className="w-3.5 h-3.5 text-slate-300 group-hover:text-primary transition-colors" />
+            </div>
+            <h5 className="text-[11px] font-bold text-slate-800 mb-1">{v.rp_name || "Professional Name N/A"}</h5>
+            <div className="flex items-center gap-1.5 text-[10px] text-slate-400">
+              <span className="font-medium text-slate-500 uppercase">Dated:</span>
+              <span>{v.date || "N/A"}</span>
+            </div>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+const ClaimsCategoryTable = ({ category, data }: { category: string, data: { headers: string[], rows: any[] } }) => {
+  const [limit, setLimit] = useState(5);
+  const id = `claim-cat-${category.toLowerCase().replace(/[^a-z0-9]/g, "-")}`;
+  
+  if (!data?.rows?.length) return null;
+
+  return (
+    <div id={id} className="scroll-mt-32 space-y-4 pt-4">
+      <div className="flex items-center justify-between border-b border-primary/20 pb-2">
+        <h5 className="text-xs font-black uppercase tracking-[0.15em] text-slate-900 flex items-center gap-2">
+          <span className="w-2 h-2 bg-primary rounded-full animate-pulse" />
+          {category}
+          <span className="text-[10px] font-normal text-slate-400 normal-case tracking-normal ml-2">
+            ({data.rows.length} total)
+          </span>
+        </h5>
+      </div>
+      
+      <div className="overflow-x-auto border border-slate-200 rounded-lg shadow-sm bg-white">
+        <table className="w-full text-left text-[10px] border-collapse min-w-[1000px]">
+          <thead className="bg-slate-50 border-b border-slate-200">
+            <tr>
+              {data.headers.map((h, i) => (
+                <th key={i} className="p-2.5 font-bold text-slate-600 border-r border-slate-200 last:border-r-0 whitespace-nowrap">
+                  {h}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {data.rows.slice(0, limit).map((row, rIdx) => (
+              <tr key={rIdx} className="border-b border-slate-100 last:border-0 hover:bg-primary/5 transition-colors">
+                {data.headers.map((h, cIdx) => (
+                  <td key={cIdx} className="p-2.5 text-slate-700 border-r border-slate-100 last:border-r-0">
+                    {row[h] || "-"}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="flex flex-col items-center gap-2">
+        {data.rows.length > limit && (
+          <button
+            onClick={() => setLimit(prev => prev + 20)}
+            className="px-5 py-2 bg-white border border-primary/30 text-primary rounded-full text-[9px] font-black uppercase tracking-widest hover:bg-primary hover:text-white transition-all active:scale-95 shadow-sm flex items-center gap-1.5"
+          >
+            <Plus className="w-3 h-3" /> Show More {category}
+          </button>
+        )}
+        {limit > 5 && (
+          <button
+            onClick={() => setLimit(5)}
+            className="text-[9px] font-bold text-slate-400 hover:text-slate-600 uppercase tracking-widest transition-colors flex items-center gap-1"
+          >
+            Show Less
+          </button>
+        )}
+      </div>
+    </div>
+  );
+};
+
+const DetailedClaimsView = ({ data }: { data: any[] }) => {
+  const scrollToAnchor = (id: string) => {
+    const el = document.getElementById(id);
+    if (el) {
+      const topOffset = 140;
+      const elementPosition = el.getBoundingClientRect().top;
+      const offsetPosition = elementPosition + window.pageYOffset - topOffset;
+      window.scrollTo({ top: offsetPosition, behavior: "smooth" });
+    }
+  };
+
+  return (
+    <div className="space-y-12">
+      <ClaimsSubNavigation
+        versions={data}
+        onSelect={scrollToAnchor}
+      />
+
+      <div className="space-y-20">
+        {data.map((version, vIdx) => (
+          <div
+            key={vIdx}
+            id={`claim-version-${vIdx}`}
+            className="scroll-mt-32 pt-8 border-t border-slate-100 first:border-t-0 first:pt-0"
+          >
+            {/* Version Header */}
+            <div className="flex items-center justify-between mb-6 group">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 bg-slate-900 text-white rounded-xl flex items-center justify-center font-black text-lg shadow-inner">
+                  {vIdx + 1}
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-[10px] font-black uppercase text-primary tracking-[0.2em]">Claim Submission Details</span>
+                    <span className="w-1.5 h-1.5 bg-slate-300 rounded-full" />
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{version.date}</span>
+                  </div>
+                  <h4 className="text-sm font-bold text-slate-900 group-hover:text-slate-900 transition-colors">
+                    {version.version}
+                  </h4>
+                  <p className="text-[11px] text-slate-500 font-medium">Professional: <span className="text-slate-800">{version.rp_name || "N/A"}</span></p>
+                </div>
+              </div>
+              <button
+                onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-bold text-slate-400 hover:text-primary bg-slate-50 hover:bg-white border border-slate-200 rounded-lg transition-all"
+              >
+                <ArrowUp className="w-3 h-3" /> BACK TO TOP
+              </button>
+            </div>
+
+            {/* Summary Overview */}
+            <div className="space-y-6">
+              <div className="overflow-hidden border border-slate-200 rounded-xl shadow-sm bg-white">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-slate-900 text-white">
+                      <th rowSpan={2} className="p-3 text-[10px] font-bold border-r border-blue-900/50 w-12 text-center uppercase tracking-tighter">Sr. No.</th>
+                      <th rowSpan={2} className="p-3 text-[10px] font-bold border-r border-blue-900/50 uppercase tracking-tighter">Category of stakeholders</th>
+                      <th colSpan={2} className="p-2 text-[9px] font-black border-b border-blue-900/50 text-center bg-[#F5B841] text-slate-900 uppercase tracking-[0.1em]">Summary of Claims Received</th>
+                      <th colSpan={2} className="p-2 text-[9px] font-black border-b border-blue-900/50 text-center bg-primary text-white uppercase tracking-[0.1em]">Summary of Claims Admitted</th>
+                    </tr>
+                    <tr className="bg-slate-50 text-slate-600 text-[9px] font-bold uppercase tracking-tight">
+                      <th className="p-2 text-center border-r border-slate-200">No. of Claims</th>
+                      <th className="p-2 text-center border-r border-slate-200">Amount (Rs.)</th>
+                      <th className="p-2 text-center border-r border-slate-200">No. of Claims</th>
+                      <th className="p-2 text-center">Amount Admitted</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {version.summaryTable && version.summaryTable.length > 0 ? (
+                      version.summaryTable.map((row: any, rIdx: number) => {
+                        const isTotal = row.category?.toLowerCase().includes("total");
+                        const catId = `claim-cat-${row.category?.toLowerCase().replace(/[^a-z0-9]/g, "-")}`;
+                        const hasDetails = version.details && version.details[row.category];
+
+                        return (
+                          <tr
+                            key={rIdx}
+                            onClick={() => hasDetails && scrollToAnchor(catId)}
+                            className={`
+                              border-b border-slate-100 last:border-0 transition-colors
+                              ${isTotal ? "bg-slate-100 font-bold text-slate-900 border-t-2 border-slate-300" : "text-slate-700"}
+                              ${hasDetails ? "hover:bg-primary/5 cursor-pointer" : "hover:bg-slate-50"}
+                            `}
+                          >
+                            <td className="p-2.5 text-center border-r border-slate-100 text-[10px]">{row.srNo}</td>
+                            <td className="p-2.5 border-r border-slate-100 font-medium text-[11px] flex items-center justify-between gap-2">
+                              {row.category}
+                              {hasDetails && <ChevronRight className="w-3 h-3 text-primary opacity-50" />}
+                            </td>
+                            <td className="p-2.5 text-center border-r border-slate-100 text-[11px] bg-slate-50/50">{row.receivedCount || "0"}</td>
+                            <td className="p-2.5 text-right border-r border-slate-100 px-4 text-[11px] tabular-nums bg-slate-50/50">{row.receivedAmount || "0"}</td>
+                            <td className="p-2.5 text-center border-r border-slate-100 text-[11px] font-bold text-primary">{row.admittedCount || "0"}</td>
+                            <td className="p-2.5 text-right px-4 text-[11px] tabular-nums font-bold text-primary">{row.admittedAmount || "0"}</td>
+                          </tr>
+                        );
+                      })
+                    ) : (
+                      <tr>
+                        <td colSpan={6} className="p-8 text-center text-slate-400 italic text-xs">
+                          No summary data found.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Detailed Category Sections */}
+              {version.details && Object.keys(version.details).length > 0 && (
+                <div className="mt-10 space-y-12 pl-6 border-l-2 border-slate-100">
+                  {Object.entries(version.details).map(([cat, detailData]: [string, any]) => (
+                    <ClaimsCategoryTable
+                      key={cat}
+                      category={cat}
+                      data={detailData}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Quick footer link */}
+            <div className="mt-8 flex justify-end">
+              <button
+                onClick={() => scrollToAnchor("main-claims-nav")}
+                className="text-[9px] font-black text-slate-300 hover:text-primary uppercase tracking-widest transition-all flex items-center gap-1.5"
+              >
+                <LayoutList className="w-3 h-3" /> Back to Summary
+              </button>
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -332,7 +583,7 @@ const RequiredLinksView = ({ metadata, onAdd, onDelete }: { metadata: any, onAdd
               </div>
               <button
                 onClick={() => { if (label && url) { onAdd(label, url); setLabel(""); setUrl(""); } }}
-                className="bg-[#81BC06] text-white px-6 rounded-lg font-black text-[10px] uppercase shadow-md shadow-[#81BC06]/20 hover:bg-[#72a605] transform hover:-translate-y-0.5 transition-all active:translate-y-0"
+                className="bg-primary text-white px-6 rounded-lg font-black text-[10px] uppercase shadow-md shadow-primary/20 hover:bg-[#72a605] transform hover:-translate-y-0.5 transition-all active:translate-y-0"
               >
                 Attach
               </button>
@@ -386,6 +637,8 @@ const RequiredLinksView = ({ metadata, onAdd, onDelete }: { metadata: any, onAdd
 };
 
 const IBBICorporateProcess = ({ company }: IBBICorporateProcessProps) => {
+  const navigate = useNavigate();
+  const { id, slug } = useParams();
   const [activeTab, setActiveTab] = useState("Details About CD");
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [selectedDesignation, setSelectedDesignation] = useState("All");
@@ -396,34 +649,79 @@ const IBBICorporateProcess = ({ company }: IBBICorporateProcessProps) => {
   const [isLoadingProf, setIsLoadingProf] = useState(false);
   const [activeProfTab, setActiveProfTab] = useState<string>("IP Detail");
   const [analyticsViewMode, setAnalyticsViewMode] = useState<"table" | "graph">("table");
+  const [docsLimit, setDocsLimit] = useState(5);
+  const [announcementsLimit, setAnnouncementsLimit] = useState(5);
 
-  // ── Background Sync for Professionals ─────────────────────────────────────
+  // Update URL to include company slug if missing
   useEffect(() => {
-    // Only sync if we have a list of professionals and aren't viewing one
-    const ips = company.insolvencyProfessionals || [];
-    if (!selectedProf && ips.length > 0) {
-      const syncProfessionals = async () => {
-        const profsToSync = ips.slice(0, 10); // Sync first 10 for performance
-
-        console.log(`[SYNC] Starting background sync for ${profsToSync.length} professionals...`);
-
-        for (const name of profsToSync) {
-          try {
-            // Check React Query cache or just hit the API silently
-            // The backend now has its own cache, so this is fast
-            await fetchProfessionalDetails(name);
-            await new Promise(r => setTimeout(r, 1500)); // Be gentle with IBBI
-          } catch (e) {
-            console.warn(`[SYNC] Failed to pre-fetch ${name}`);
-          }
-        }
-        console.log("[SYNC] Background sync complete.");
-      };
-
-      const timer = setTimeout(syncProfessionals, 3000); // Wait 3s after load
-      return () => clearTimeout(timer);
+    if (company.name && id) {
+      const companySlug = slugify(company.name);
+      if (slug !== companySlug) {
+        navigate(`/company/${id}/${companySlug}`, { replace: true });
+      }
     }
-  }, [selectedProf, company.insolvencyProfessionals]);
+  }, [company.name, id, slug, navigate]);
+
+  // Refs for smooth scroll and active tab tracking
+  const sectionRefs = useRef<Record<string, HTMLElement | null>>({});
+
+  // ── Pre-fetching & Parallel Data Loading ─────────────────────────────────
+  useEffect(() => {
+    // Start background sync for professionals as soon as list is available
+    const ips = company.insolvencyProfessionals || [];
+    if (ips.length > 0) {
+      // Pre-fetch the first 3 professionals immediately in parallel
+      ips.slice(0, 3).forEach(name => {
+        fetchProfessionalDetails(name).catch(() => { });
+      });
+    }
+  }, [company.insolvencyProfessionals]);
+
+  // Handle active tab update on scroll
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting && entry.intersectionRatio > 0.4) {
+            setActiveTab(entry.target.id);
+          }
+        });
+      },
+      {
+        rootMargin: "-120px 0px -60% 0px", // Better for sticky tab bar sensing
+        threshold: [0.1, 0.4, 0.7]
+      }
+    );
+
+    Object.values(sectionRefs.current).forEach((section) => {
+      if (section) observer.observe(section);
+    });
+
+    return () => observer.disconnect();
+  }, []);
+
+  const scrollToSection = (id: string) => {
+    const section = document.getElementById(id);
+    if (section) {
+      const topOffset = 130; // Accounting for navbar + sticky tabs
+      const elementPosition = section.getBoundingClientRect().top;
+      const offsetPosition = elementPosition + window.pageYOffset - topOffset;
+
+      window.scrollTo({
+        top: offsetPosition,
+        behavior: "smooth"
+      });
+      setActiveTab(id);
+    }
+  };
+
+  const renderValueWithCheck = (val: any) => {
+    const s = String(val || "").trim();
+    if (s === "No" || s === "NA" || s === "N/A" || !s || s === "-") {
+      return <span className="text-red-600 font-bold">{s || "N/A"}</span>;
+    }
+    return val;
+  };
 
 
   const detailLookupId =
@@ -446,6 +744,17 @@ const IBBICorporateProcess = ({ company }: IBBICorporateProcessProps) => {
     },
     staleTime: 1000 * 60 * 5, // 5 mins
     retry: 1,
+    enabled: !!detailLookupId,
+  });
+
+  // Fetch detailed merged claims versions
+  const {
+    data: mergedClaims,
+    isLoading: isLoadingMergedClaims,
+  } = useQuery({
+    queryKey: ["ibbi-merged-claims", detailLookupId],
+    queryFn: () => fetchMergedClaims(detailLookupId),
+    staleTime: 1000 * 60 * 10, // 10 mins
     enabled: !!detailLookupId,
   });
 
@@ -501,9 +810,6 @@ const IBBICorporateProcess = ({ company }: IBBICorporateProcessProps) => {
     { id: "Invitation for Resolution Plan", label: `Invitation For Resolution Plan${resolutionPlanSection?.rows?.length ? ` (${resolutionPlanSection.rows.length})` : ""}` },
     { id: "Orders", label: `Orders${ordersSection?.rows?.length ? ` (${ordersSection.rows.length})` : ""}` },
     { id: "Auction Notice", label: `Auction Notice${auctionNoticeSection?.rows?.length ? ` (${auctionNoticeSection.rows.length})` : ""}` },
-    { id: "Directors", label: `Directors${enriched?.directors?.length ? ` (${enriched.directors.length})` : ""}` },
-    { id: "Charges", label: `Charges${enriched?.charges?.length ? ` (${enriched.charges.length})` : ""}` },
-    { id: "Related News", label: `Related News${enriched?.news?.length ? ` (${enriched.news.length})` : ""}` },
   ];
 
   // ── All eligible docs — filtered by type AND deduplicated by URL ──────────
@@ -543,10 +849,10 @@ const IBBICorporateProcess = ({ company }: IBBICorporateProcessProps) => {
 
 
   return (
-    <div className="w-full bg-white font-sans text-sm mb-12 border border-slate-200 rounded overflow-hidden shadow-sm">
+    <div className="w-full bg-white font-sans text-sm mb-6 border border-slate-200 rounded-xl shadow-sm">
 
       {/* ── Banner ── */}
-      <div className="bg-[#81BC06] text-white px-6 py-5 relative overflow-hidden">
+      <div className="bg-primary text-white px-6 py-4 relative overflow-hidden rounded-t-xl">
         <div className="absolute inset-0 opacity-15 pointer-events-none">
           <svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
             <path d="M-50,80 Q150,10 400,60 T900,30" stroke="white" strokeWidth="1.5" fill="none" />
@@ -558,8 +864,7 @@ const IBBICorporateProcess = ({ company }: IBBICorporateProcessProps) => {
         </div>
         <div className="relative z-10 flex flex-wrap justify-between items-start gap-3">
           <div>
-            <p className="text-[10px] font-bold uppercase tracking-widest text-white/70 mb-1">IBBI</p>
-            <h2 className="text-xl font-black uppercase tracking-wide mb-2">CORPORATE PROCESSES</h2>
+            <h2 className="text-lg font-black uppercase tracking-wide mb-1">{company.name}</h2>
             <div className="flex flex-wrap items-center gap-1 text-xs text-white/85">
               <span className="hover:underline cursor-pointer">Home</span>
               <ChevronRight className="w-3 h-3" />
@@ -572,16 +877,6 @@ const IBBICorporateProcess = ({ company }: IBBICorporateProcessProps) => {
           {/* ── Right side: CIN + Refresh Button ── */}
           <div className="flex flex-col items-end gap-2">
             <div className="flex flex-wrap items-center justify-end gap-2">
-              {company.authCap && (
-                <span className="font-bold tracking-tight bg-white/10 px-3 py-1 rounded text-[10px] uppercase">
-                  Auth Cap: <span className="text-white">{formatToCr(company.authCap)}</span>
-                </span>
-              )}
-              {company.puc && (
-                <span className="font-bold tracking-tight bg-white/10 px-3 py-1 rounded text-[10px] uppercase">
-                  Paid Up: <span className="text-white">{formatToCr(company.puc)}</span>
-                </span>
-              )}
               {company.cin && company.cin !== "N/A" && (
                 <span className="font-bold tracking-wider bg-white/20 px-3 py-1 rounded text-xs">
                   CIN No: {company.cin}
@@ -601,7 +896,7 @@ const IBBICorporateProcess = ({ company }: IBBICorporateProcessProps) => {
                   ? "bg-white/20 text-white/60 cursor-not-allowed"
                   : refreshStatus === "success"
                     ? "bg-emerald-500 text-white hover:bg-emerald-600"
-                    : "bg-white text-[#81BC06] hover:bg-white/90 hover:shadow-lg"
+                    : "bg-white text-primary hover:bg-white/90 hover:shadow-lg"
                 }
               `}
             >
@@ -626,16 +921,16 @@ const IBBICorporateProcess = ({ company }: IBBICorporateProcessProps) => {
         </div>
       </div>
 
-      {/* ── Horizontal Tabs ── */}
-      <div className="bg-white border-b border-slate-200 overflow-x-auto">
+      {/* ── Sticky Horizontal Tabs ── */}
+      <div className="sticky top-[48px] z-50 bg-white border-b border-slate-200 overflow-x-auto shadow-sm backdrop-blur-md bg-white/95">
         <div className="flex flex-nowrap min-w-max">
           {tabs.map((tab) => (
             <button
               key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
+              onClick={() => scrollToSection(tab.id)}
               className={`px-5 py-3 text-[11px] font-bold uppercase tracking-wide whitespace-nowrap border-b-2 transition-all ${activeTab === tab.id
-                ? "border-[#81BC06] text-[#81BC06] bg-[#81BC06]/10"
-                : "border-transparent text-slate-400 hover:text-[#81BC06] hover:bg-[#81BC06]/5"
+                ? "border-primary text-primary bg-primary/10"
+                : "border-transparent text-slate-400 hover:text-primary hover:bg-primary/5"
                 }`}
             >
               {tab.label}
@@ -644,15 +939,18 @@ const IBBICorporateProcess = ({ company }: IBBICorporateProcessProps) => {
         </div>
       </div>
 
+      {/* ── All Sections (Sequential Rendering for Scrolling) ── */}
+      <div className="p-4 space-y-8">
 
-      {/* ── Tab Content ── */}
-      <div className="p-6">
-
-        {/* ── TAB: Details About CD ── */}
-        {activeTab === "Details About CD" && (
+        {/* ── SECTION: Details About CD ── */}
+        <section
+          id="Details About CD"
+          ref={(el) => (sectionRefs.current["Details About CD"] = el)}
+          className="scroll-mt-24"
+        >
           <div className="space-y-8">
             <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
-              <h3 className="text-base font-bold text-slate-900">For CIRP/Liquidation Assignment</h3>
+              <h3 className="text-base font-bold text-slate-900 border-l-4 border-primary pl-3 uppercase tracking-tight">For CIRP/Liquidation Assignment</h3>
 
               {enriched?.enrichmentInProgress && (
                 <div className="flex items-center gap-2 px-3 py-1 bg-amber-50 border border-amber-200 rounded-full animate-pulse shadow-sm">
@@ -673,8 +971,8 @@ const IBBICorporateProcess = ({ company }: IBBICorporateProcessProps) => {
                     <tbody>
                       {detailsSection.rows.map((row, i) => (
                         <tr key={row.id} className={i < detailsSection.rows.length - 1 ? "border-b border-slate-200" : ""}>
-                          <td className="p-3 bg-slate-50 text-slate-600 font-medium w-60">{row.label || "-"}</td>
-                          <td className="p-3 border-l border-slate-200 text-slate-800">
+                          <td className="p-2.5 bg-slate-50 text-slate-600 font-medium w-60">{row.label || "-"}</td>
+                          <td className="p-2.5 border-l border-slate-200 text-slate-800">
                             {row.label?.toLowerCase().includes("capital") && !isNaN(Number(row.value))
                               ? formatToCr(Number(row.value))
                               : (row.value || "-")}
@@ -696,8 +994,8 @@ const IBBICorporateProcess = ({ company }: IBBICorporateProcessProps) => {
                         { label: "Sector of business of CD", value: company.industry },
                       ].map(({ label, value }, i, arr) => (
                         <tr key={label} className={i < arr.length - 1 ? "border-b border-slate-200" : ""}>
-                          <td className="p-3 bg-slate-50 text-slate-600 font-medium w-60">{label}</td>
-                          <td className="p-3 border-l border-slate-200 text-slate-800">{value || "-"}</td>
+                          <td className="p-2.5 bg-slate-50 text-slate-600 font-medium w-60">{label}</td>
+                          <td className="p-2.5 border-l border-slate-200 text-slate-800">{value || "-"}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -710,7 +1008,7 @@ const IBBICorporateProcess = ({ company }: IBBICorporateProcessProps) => {
             <div>
               <h3 className="text-base font-bold text-slate-900 mb-3">Professionals Associated</h3>
               <div className="border border-slate-300 rounded overflow-hidden">
-                <div className="bg-[#002D62] text-white p-2.5 text-center text-[12px] tracking-wide font-medium">
+                <div className="bg-slate-900 text-white p-2.5 text-center text-[12px] tracking-wide font-medium">
                   Process with ICD:&nbsp;{company.announcementDate || "-"}
                 </div>
                 <div className="overflow-x-auto">
@@ -746,7 +1044,7 @@ const IBBICorporateProcess = ({ company }: IBBICorporateProcessProps) => {
 
                       {isLoadingProf ? (
                         <div className="py-20 flex flex-col items-center justify-center gap-3">
-                          <Loader2 className="w-8 h-8 text-[#81BC06] animate-spin" />
+                          <Loader2 className="w-8 h-8 text-primary animate-spin" />
                           <p className="text-sm text-slate-500 font-medium">Fetching professional details from IBBI...</p>
                         </div>
                       ) : !profData?.found ? (
@@ -764,48 +1062,47 @@ const IBBICorporateProcess = ({ company }: IBBICorporateProcessProps) => {
                         <div>
                           {/* Sub Tabs */}
                           <div className="flex border-b border-slate-200 bg-white overflow-x-auto scrollbar-hide">
-                            {[...Object.keys(profData.sections).filter(k => k !== "_scraped_at"), "Required"].map((tab) => (
-                              <button
-                                key={tab}
-                                onClick={() => setActiveProfTab(tab)}
-                                className={`px-5 py-3 text-[11px] font-bold uppercase tracking-wider whitespace-nowrap transition-all border-b-2 ${activeProfTab === tab
-                                  ? "border-[#81BC06] text-[#81BC06] bg-[#81BC06]/5"
-                                  : "border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50"
-                                  }`}
-                              >
-                                {tab}
-                              </button>
-                            ))}
+                            {[...Object.keys(profData.sections).filter(k => k !== "_scraped_at" && !k.toLowerCase().includes("afa"))].map((tab) => {
+                              const labelMap: Record<string, string> = {
+                                "IP Detail": "IP Details",
+                                "Assignment Detail": "Assignment Details",
+                                "Assignment Details": "Assignment Details",
+                                "CPE Detail": "CPE Details",
+                                "CPE Details": "CPE Details",
+                                "Professional Qualification": "Professional Qualifications",
+                                "Professional Qualifications": "Professional Qualifications",
+                                "Work Experience": "Work Experience",
+                                "Assignment Analytics": "Assignment Analytics",
+                              };
+                              const label = labelMap[tab] || tab;
+
+                              return (
+                                <button
+                                  key={tab}
+                                  onClick={() => setActiveProfTab(tab)}
+                                  className={`px-5 py-2 text-[11px] font-bold uppercase tracking-wider whitespace-nowrap transition-all border-b-2 ${activeProfTab === tab
+                                    ? "border-primary text-primary bg-primary/5"
+                                    : "border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50"
+                                    }`}
+                                >
+                                  {label}
+                                </button>
+                              );
+                            })}
                           </div>
 
                           {/* Tab Content */}
-                          <div className="p-5 min-h-[400px]">
+                          <div className="p-3 min-h-[300px]">
                             {(() => {
-                              // ── Required Section (Custom) ──────────────────
-                              if (activeProfTab === "Required") {
-                                return <RequiredLinksView
-                                  metadata={profMetadata}
-                                  onAdd={async (label, url) => {
-                                    const newMetadata = { ...profMetadata, links: [...profMetadata.links, { label, url, id: Date.now() }] };
-                                    setProfMetadata(newMetadata);
-                                    await updateProfessionalMetadata(selectedProf!, newMetadata);
-                                  }}
-                                  onDelete={async (id) => {
-                                    const newMetadata = { ...profMetadata, links: profMetadata.links.filter((l: any) => l.id !== id) };
-                                    setProfMetadata(newMetadata);
-                                    await updateProfessionalMetadata(selectedProf!, newMetadata);
-                                  }}
-                                />;
-                              }
-
                               const sections = profData.sections?.[activeProfTab];
                               if (!sections || (Array.isArray(sections) && sections.length === 0)) {
                                 return (
-                                  <div className="py-10 text-center text-slate-400 italic text-xs">
+                                  <div className="py-6 text-center text-slate-400 italic text-xs">
                                     No records found for this section.
                                   </div>
                                 );
                               }
+
 
                               return (
                                 <div className="space-y-8">
@@ -827,7 +1124,7 @@ const IBBICorporateProcess = ({ company }: IBBICorporateProcessProps) => {
                                           </button>
                                           <button
                                             onClick={() => setAnalyticsViewMode("graph")}
-                                            className={`px-3 py-1.5 rounded-md flex items-center gap-1.5 text-[10px] font-black transition-all ${analyticsViewMode === "graph" ? "bg-white text-[#81BC06] shadow-sm" : "hover:bg-white/50 text-slate-400"}`}
+                                            className={`px-3 py-1.5 rounded-md flex items-center gap-1.5 text-[10px] font-black transition-all ${analyticsViewMode === "graph" ? "bg-white text-primary shadow-sm" : "hover:bg-white/50 text-slate-400"}`}
                                           >
                                             <BarChart2 className="w-3.5 h-3.5" /> GRAPH
                                           </button>
@@ -855,8 +1152,10 @@ const IBBICorporateProcess = ({ company }: IBBICorporateProcessProps) => {
                                               <tbody>
                                                 {section.data.map((row: any, i: number) => (
                                                   <tr key={i} className="border-b border-slate-100 last:border-0 hover:bg-slate-50/30 transition-colors">
-                                                    <td className="p-3 bg-slate-50/50 text-slate-500 font-bold w-52 border-r border-slate-100 text-[11px] uppercase tracking-tight">{row.label}</td>
-                                                    <td className="p-3 text-slate-800 font-medium">{row.value || "-"}</td>
+                                                    <td className="p-2 bg-slate-50/50 text-slate-500 font-bold w-52 border-r border-slate-100 text-[11px] uppercase tracking-tight">{row.label}</td>
+                                                    <td className="p-2 text-slate-800 font-medium">
+                                                      {renderValueWithCheck(row.value)}
+                                                    </td>
                                                   </tr>
                                                 ))}
                                               </tbody>
@@ -866,24 +1165,43 @@ const IBBICorporateProcess = ({ company }: IBBICorporateProcessProps) => {
                                       }
 
                                       if (section.type === "horizontal") {
-                                        const isAFAHistory = activeProfTab === "AFA Detail" && sIdx > 0;
                                         return (
                                           <div key={sIdx} className="border border-slate-200 rounded-lg overflow-hidden shadow-sm">
                                             <div className="overflow-x-auto">
                                               <table className="w-full text-left text-[11px]">
-                                                <thead className={`${isAFAHistory ? 'bg-[#F5B841] text-black' : 'bg-[#002D62] text-white'} uppercase font-bold border-b border-slate-200`}>
+                                                <thead className="bg-slate-900 text-white uppercase font-bold border-b border-slate-200">
                                                   <tr>
                                                     {section.headers.map((h: string) => (
-                                                      <th key={h} className={`p-3 font-bold tracking-tight border-r ${isAFAHistory ? 'border-yellow-600/30' : 'border-blue-800/50'} last:border-r-0 whitespace-nowrap`}>{h}</th>
+                                                      <th key={h} className="p-3 font-bold tracking-tight border-r border-blue-800/50 last:border-r-0 whitespace-nowrap">{h}</th>
                                                     ))}
                                                   </tr>
                                                 </thead>
                                                 <tbody>
                                                   {section.data.map((row: any, i: number) => (
-                                                    <tr key={i} className={`border-b border-slate-100 last:border-0 hover:bg-blue-50/30 transition-colors ${i % 2 === 0 ? 'bg-white' : (isAFAHistory ? 'bg-yellow-50/30' : 'bg-slate-50/30')}`}>
-                                                      {section.headers.map((h: string) => (
-                                                        <td key={h} className="p-3 text-slate-700 border-r border-slate-100 last:border-r-0">{row[h] || "-"}</td>
-                                                      ))}
+                                                    <tr key={i} className={`border-b border-slate-100 last:border-0 hover:bg-blue-50/30 transition-colors ${i % 2 === 0 ? 'bg-white' : 'bg-slate-50/30'}`}>
+                                                      {section.headers.map((h: string) => {
+                                                        const val = row[h];
+                                                        const hLower = h.toLowerCase();
+                                                        if ((hLower.includes("cin") || hLower.includes("corp")) && val && val !== "NA" && val !== "N/A" && val !== "-") {
+                                                          return (
+                                                            <td key={h} className="p-2 border-r border-slate-100 last:border-r-0">
+                                                              <a
+                                                                href={`/company/${val}`}
+                                                                target="_blank"
+                                                                rel="noreferrer"
+                                                                className="text-blue-600 font-bold hover:underline"
+                                                              >
+                                                                {val}
+                                                              </a>
+                                                            </td>
+                                                          );
+                                                        }
+                                                        return (
+                                                          <td key={h} className="p-2 text-slate-700 border-r border-slate-100 last:border-r-0">
+                                                            {renderValueWithCheck(val)}
+                                                          </td>
+                                                        );
+                                                      })}
                                                     </tr>
                                                   ))}
                                                 </tbody>
@@ -904,7 +1222,7 @@ const IBBICorporateProcess = ({ company }: IBBICorporateProcessProps) => {
                     </div>
                   ) : (
                     <table className="w-full text-left text-sm">
-                      <thead className="bg-[#F5B841] text-slate-900 border-b border-amber-200">
+                      <thead className="bg-primary/20 text-primary font-bold border-amber-200">
                         <tr>
                           <th className="p-2.5 font-bold border-r border-amber-200">Name</th>
                           <th className="p-2.5 font-bold border-r border-amber-200">Registration No.</th>
@@ -971,7 +1289,7 @@ const IBBICorporateProcess = ({ company }: IBBICorporateProcessProps) => {
                         value={selectedCategory}
                         onChange={(e) => setSelectedCategory(e.target.value)}
                         className="text-xs border border-slate-300 rounded px-2.5 py-1.5 bg-white text-slate-700 font-medium
-                          focus:outline-none focus:ring-2 focus:ring-[#81BC06] focus:border-[#81BC06]
+                          focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary
                           hover:border-slate-400 transition-colors cursor-pointer min-w-[180px]"
                       >
                         {categories.map((cat) => (
@@ -985,7 +1303,7 @@ const IBBICorporateProcess = ({ company }: IBBICorporateProcessProps) => {
                       {selectedCategory !== "All" && (
                         <button
                           onClick={() => setSelectedCategory("All")}
-                          className="text-xs text-[#81BC06] hover:text-green-700 font-medium underline"
+                          className="text-xs text-primary hover:text-green-700 font-medium underline"
                         >
                           Clear
                         </button>
@@ -1002,105 +1320,132 @@ const IBBICorporateProcess = ({ company }: IBBICorporateProcessProps) => {
                     <strong className="text-slate-600">"{selectedCategory}"</strong>.{" "}
                     <button
                       onClick={() => setSelectedCategory("All")}
-                      className="text-[#81BC06] underline hover:text-green-700"
+                      className="text-primary underline hover:text-green-700"
                     >
                       Show all
                     </button>
                   </div>
                 ) : (
-                  <div className="border border-slate-300 rounded overflow-x-auto">
-                    <table className="w-full text-left text-sm min-w-[560px]">
-                      <thead className="bg-slate-100 border-b border-slate-300">
-                        <tr>
-                          <th className="p-2.5 font-bold border-r border-slate-300 text-slate-600">Category</th>
-                          <th className="p-2.5 font-bold border-r border-slate-300 text-slate-600 w-[44%]">File Name</th>
-                          <th className="p-2.5 font-bold border-r border-slate-300 text-slate-600">Source</th>
-                          <th className="p-2.5 font-bold border-r border-slate-300 text-slate-600">Date</th>
-                          <th className="p-2.5 font-bold text-slate-600 text-center w-28">Download</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {filteredDocs.map((doc, idx) => {
-                          const href = resolveDocUrl(doc.downloadUrl || doc.url);
-                          const { label, color, icon } = getFileInfo(doc);
-                          const isPdf = label === "PDF";
-                          const readableName = prettifyFileName(doc.fileName);
-                          return (
-                            <tr
-                              key={idx}
-                              className="border-b border-slate-200 last:border-0 hover:bg-[#81BC06]/5 transition-colors"
-                            >
-                              {/* Category — pill badge */}
-                              <td className="p-2.5 border-r border-slate-200 text-xs">
-                                <span className="inline-flex items-center px-2 py-0.5 bg-slate-100 text-slate-600 rounded-full text-[10px] font-medium">
-                                  {doc.category || "General"}
-                                </span>
-                              </td>
+                  <div className="space-y-4">
+                    <div className="border border-slate-300 rounded overflow-x-auto">
+                      <table className="w-full text-left text-sm min-w-[560px]">
+                        <thead className="bg-slate-100 border-b border-slate-300">
+                          <tr>
+                            <th className="p-2.5 font-bold border-r border-slate-300 text-slate-600">Category</th>
+                            <th className="p-2.5 font-bold border-r border-slate-300 text-slate-600 w-[44%]">File Name</th>
+                            <th className="p-2.5 font-bold border-r border-slate-300 text-slate-600">Source</th>
+                            <th className="p-2.5 font-bold border-r border-slate-300 text-slate-600">Date</th>
+                            <th className="p-2.5 font-bold text-slate-600 text-center w-28">Download</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {filteredDocs.slice(0, docsLimit).map((doc, idx) => {
+                            const href = resolveDocUrl(doc.downloadUrl || doc.url);
+                            const { label, color, icon } = getFileInfo(doc);
+                            const isPdf = label === "PDF";
+                            const readableName = prettifyFileName(doc.fileName);
+                            return (
+                              <tr
+                                key={idx}
+                                className="border-b border-slate-200 last:border-0 hover:bg-primary/5 transition-colors"
+                              >
+                                {/* Category — pill badge */}
+                                <td className="p-2.5 border-r border-slate-200 text-xs">
+                                  <span className="inline-flex items-center px-2 py-0.5 bg-slate-100 text-slate-600 rounded-full text-[10px] font-medium">
+                                    {doc.category || "General"}
+                                  </span>
+                                </td>
 
-                              {/* File Name — readable, not raw slug */}
-                              <td className="p-2.5 border-r border-slate-200">
-                                <a
-                                  href={href}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="text-blue-600 hover:text-blue-800 underline text-xs"
-                                  title={doc.fileName}
-                                >
-                                  {readableName.length > 60
-                                    ? readableName.substring(0, 60) + "…"
-                                    : readableName}
-                                </a>
-                              </td>
-
-                              {/* Source */}
-                              <td className="p-2.5 border-r border-slate-200 text-slate-400 text-xs">
-                                {doc.source || "-"}
-                              </td>
-
-                              {/* Date */}
-                              <td className="p-2.5 border-r border-slate-200 text-slate-400 text-xs">
-                                {doc.dateOfFiling || "-"}
-                              </td>
-
-                              {/* Download — blob download for PDF, open for others */}
-                              <td className="p-2.5 text-center">
-                                {isPdf ? (
-                                  <button
-                                    onClick={() => downloadPdf(href, doc.fileName)}
-                                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 ${color} text-white rounded text-xs font-bold transition-all shadow-sm active:scale-95 hover:opacity-90`}
-                                  >
-                                    <Download className="w-3 h-3" />
-                                    {label}
-                                  </button>
-                                ) : (
+                                {/* File Name — readable, not raw slug */}
+                                <td className="p-2.5 border-r border-slate-200">
                                   <a
                                     href={href}
                                     target="_blank"
                                     rel="noreferrer"
-                                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 ${color} text-white rounded text-xs font-bold transition-all shadow-sm active:scale-95`}
+                                    className="text-blue-600 hover:text-blue-800 underline text-xs"
+                                    title={doc.fileName}
                                   >
-                                    {icon}
-                                    {label}
+                                    {readableName.length > 60
+                                      ? readableName.substring(0, 60) + "…"
+                                      : readableName}
                                   </a>
-                                )}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
+                                </td>
+
+                                {/* Source */}
+                                <td className="p-2.5 border-r border-slate-200 text-slate-400 text-xs">
+                                  {doc.source || "-"}
+                                </td>
+
+                                {/* Date */}
+                                <td className="p-2.5 border-r border-slate-200 text-slate-400 text-xs">
+                                  {doc.dateOfFiling || "-"}
+                                </td>
+
+                                {/* Download — blob download for PDF, open for others */}
+                                <td className="p-2.5 text-center">
+                                  {isPdf ? (
+                                    <button
+                                      onClick={() => downloadPdf(href, doc.fileName)}
+                                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 ${color} text-white rounded text-xs font-bold transition-all shadow-sm active:scale-95 hover:opacity-90`}
+                                    >
+                                      <Download className="w-3 h-3" />
+                                      {label}
+                                    </button>
+                                  ) : (
+                                    <a
+                                      href={href}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 ${color} text-white rounded text-xs font-bold transition-all shadow-sm active:scale-95`}
+                                    >
+                                      {icon}
+                                      {label}
+                                    </a>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    <div className="flex flex-col items-center gap-3 pt-2">
+                      {filteredDocs.length > docsLimit && (
+                        <button
+                          onClick={() => setDocsLimit(prev => prev + 10)}
+                          className="px-6 py-2 bg-primary/10 border border-primary/20 text-primary rounded-full text-[10px] font-black uppercase tracking-[0.2em] hover:bg-primary hover:text-white transition-all shadow-sm active:scale-95 flex items-center gap-2"
+                        >
+                          <Plus className="w-3.5 h-3.5" /> Show More Documents
+                        </button>
+                      )}
+                      
+                      {docsLimit > 5 && (
+                        <button
+                          onClick={() => setDocsLimit(5)}
+                          className="px-6 py-2 bg-slate-100 border border-slate-200 text-slate-500 rounded-full text-[10px] font-black uppercase tracking-[0.2em] hover:bg-slate-200 hover:text-slate-700 transition-all shadow-sm active:scale-95 flex items-center gap-2"
+                        >
+                          Show Less
+                        </button>
+                      )}
+                    </div>
                   </div>
                 )}
 
               </div>
             )}
           </div>
-        )}
 
-        {/* ── TAB: Public Announcement ── */}
-        {activeTab === "Public Announcement" && (
+        </section>
+
+        {/* ── SECTION: Public Announcement ── */}
+        <section
+          id="Public Announcement"
+          ref={(el) => (sectionRefs.current["Public Announcement"] = el)}
+          className="scroll-mt-24 pt-6 border-t border-slate-100"
+        >
           <div>
-            <h3 className="text-base font-bold text-slate-900 mb-4">Announcement History</h3>
+            <h3 className="text-base font-bold text-slate-900 mb-1 border-l-4 border-primary pl-3 uppercase tracking-tight">Announcement History</h3>
             {isLoading ? (
               <TabLoader />
             ) : error ? (
@@ -1108,16 +1453,47 @@ const IBBICorporateProcess = ({ company }: IBBICorporateProcessProps) => {
             ) : !publicAnnouncementSection?.rows?.length ? (
               <EmptyTab tab="Public Announcement" />
             ) : (
-              <ProcessTable section={publicAnnouncementSection} />
+              <div className="space-y-4">
+                <ProcessTable
+                  section={{
+                    ...publicAnnouncementSection,
+                    rows: publicAnnouncementSection.rows.slice(0, announcementsLimit)
+                  }}
+                />
+                <div className="flex flex-col items-center gap-3 pt-2">
+                  {publicAnnouncementSection.rows.length > announcementsLimit && (
+                    <button
+                      onClick={() => setAnnouncementsLimit(prev => prev + 10)}
+                      className="px-6 py-2 bg-slate-900 border border-slate-900 text-white rounded-full text-[10px] font-black uppercase tracking-[0.2em] hover:bg-slate-800 transition-all shadow-sm active:scale-95 flex items-center gap-2"
+                    >
+                      <Plus className="w-3.5 h-3.5" /> Show More Announcements
+                    </button>
+                  )}
+                  
+                  {announcementsLimit > 5 && (
+                    <button
+                      onClick={() => setAnnouncementsLimit(5)}
+                      className="px-6 py-2 bg-slate-100 border border-slate-200 text-slate-500 rounded-full text-[10px] font-black uppercase tracking-[0.2em] hover:bg-slate-200 hover:text-slate-700 transition-all shadow-sm active:scale-95 flex items-center gap-2"
+                    >
+                      Show Less
+                    </button>
+                  )}
+                </div>
+              </div>
             )}
           </div>
-        )}
+        </section>
 
-        {/* ── TAB: Claims ── */}
-        {activeTab === "Claims" && (
+        {/* ── SECTION: Claims ── */}
+        <section
+          id="Claims"
+          ref={(el) => (sectionRefs.current["Claims"] = el)}
+          className="scroll-mt-24 pt-8 border-t border-slate-100"
+        >
           <div className="space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <h3 className="text-base font-bold text-slate-900">Claims Information</h3>
+              <h3 className="text-base font-bold text-slate-900 border-l-4 border-primary pl-3 uppercase tracking-tight">Claims Information</h3>
+              {/* ... (merge button logic remains same) */}
 
               {/* ── Merge & View PDF Button ── */}
               {claimsSection?.rows?.length > 1 && (
@@ -1233,7 +1609,7 @@ const IBBICorporateProcess = ({ company }: IBBICorporateProcessProps) => {
                     }
                   }}
                   id="merge-claims-btn"
-                  className="inline-flex items-center gap-2 px-4 py-2 bg-[#002D62] text-white rounded text-xs font-bold hover:bg-[#003d82] transition-colors shadow-sm"
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded text-xs font-bold hover:bg-[#003d82] transition-colors shadow-sm"
                 >
                   <FileText className="w-3.5 h-3.5" />
                   Merge & View Combined Claims (PDF)
@@ -1241,22 +1617,28 @@ const IBBICorporateProcess = ({ company }: IBBICorporateProcessProps) => {
               )}
             </div>
 
-            {isLoading ? (
+            {isLoading || isLoadingMergedClaims ? (
               <TabLoader />
             ) : error ? (
               <TabError message="Could not load claims data. The section is unavailable right now." />
-            ) : !claimsSection?.rows?.length ? (
-              <EmptyTab tab="Claims" />
-            ) : (
+            ) : mergedClaims && mergedClaims.length > 0 ? (
+              <DetailedClaimsView data={mergedClaims} />
+            ) : claimsSection?.rows?.length ? (
               <ProcessTable section={claimsSection} />
+            ) : (
+              <EmptyTab tab="Claims" />
             )}
           </div>
-        )}
+        </section>
 
-        {/* ── TAB: Invitation for Resolution Plan ── */}
-        {activeTab === "Invitation for Resolution Plan" && (
+        {/* ── SECTION: Invitation for Resolution Plan ── */}
+        <section
+          id="Invitation for Resolution Plan"
+          ref={(el) => (sectionRefs.current["Invitation for Resolution Plan"] = el)}
+          className="scroll-mt-24 pt-8 border-t border-slate-100"
+        >
           <div>
-            <h3 className="text-base font-bold text-slate-900 mb-4">Resolution Plan Invitation</h3>
+            <h3 className="text-base font-bold text-slate-900 mb-2 border-l-4 border-primary pl-3 uppercase tracking-tight">Resolution Plan Invitation</h3>
             {isLoading ? (
               <TabLoader />
             ) : error ? (
@@ -1267,12 +1649,16 @@ const IBBICorporateProcess = ({ company }: IBBICorporateProcessProps) => {
               <ProcessTable section={resolutionPlanSection} />
             )}
           </div>
-        )}
+        </section>
 
-        {/* ── TAB: Orders ── */}
-        {activeTab === "Orders" && (
+        {/* ── SECTION: Orders ── */}
+        <section
+          id="Orders"
+          ref={(el) => (sectionRefs.current["Orders"] = el)}
+          className="scroll-mt-24 pt-8 border-t border-slate-100"
+        >
           <div>
-            <h3 className="text-base font-bold text-slate-900 mb-4">Related Orders</h3>
+            <h3 className="text-base font-bold text-slate-900 mb-2 border-l-4 border-primary pl-3 uppercase tracking-tight">Related Orders</h3>
             {isLoading ? (
               <TabLoader />
             ) : error ? (
@@ -1283,12 +1669,16 @@ const IBBICorporateProcess = ({ company }: IBBICorporateProcessProps) => {
               <EmptyTab tab="Orders" />
             )}
           </div>
-        )}
+        </section>
 
-        {/* ── TAB: Auction Notice ── */}
-        {activeTab === "Auction Notice" && (
+        {/* ── SECTION: Auction Notice ── */}
+        <section
+          id="Auction Notice"
+          ref={(el) => (sectionRefs.current["Auction Notice"] = el)}
+          className="scroll-mt-24 pt-8 border-t border-slate-100"
+        >
           <div>
-            <h3 className="text-base font-bold text-slate-900 mb-4">Auction Notices</h3>
+            <h3 className="text-base font-bold text-slate-900 mb-2 border-l-4 border-primary pl-3 uppercase tracking-tight">Auction Notices</h3>
             {isLoading ? (
               <TabLoader />
             ) : error ? (
@@ -1299,177 +1689,7 @@ const IBBICorporateProcess = ({ company }: IBBICorporateProcessProps) => {
               <ProcessTable section={auctionNoticeSection} />
             )}
           </div>
-        )}
-
-        {/* ── TAB: Directors ── */}
-        {activeTab === "Directors" && (
-          <div className="space-y-6">
-            <div className="flex flex-wrap items-center justify-between gap-4">
-              <h2 className="text-xl font-black text-slate-900 tracking-tight uppercase">DIRECTORS</h2>
-            </div>
-
-            {isLoading ? (
-              <TabLoader />
-            ) : !enriched?.directors?.length ? (
-              <EmptyTab tab="Directors" />
-            ) : (
-              <div>
-                <div className="overflow-x-auto rounded-xl border border-slate-200 shadow-sm bg-white">
-                  <table className="w-full text-left text-sm border-collapse">
-                    <thead className="bg-[#fcfdfe] text-slate-500 uppercase font-black text-[10px] tracking-widest border-b border-slate-200">
-                      <tr>
-                        <th className="px-5 py-4 w-12 text-center">#</th>
-                        <th className="px-5 py-4">DIN</th>
-                        <th className="px-5 py-4">NAME</th>
-                        <th className="px-5 py-4">
-                          <div className="flex items-center gap-2">
-                            DESIGNATION
-                            <select
-                              value={selectedDesignation}
-                              onChange={(e) => setSelectedDesignation(e.target.value)}
-                              className="bg-white border border-slate-200 rounded px-2 py-1 normal-case font-medium text-slate-600 focus:outline-none focus:ring-1 focus:ring-[#81BC06]"
-                            >
-                              <option value="All">All</option>
-                              {Array.from(new Set(enriched.directors.map(d => d.designation))).sort().map(d => (
-                                <option key={d} value={d}>{d}</option>
-                              ))}
-                            </select>
-                          </div>
-                        </th>
-                        <th className="px-5 py-4">START DATE</th>
-                        <th className="px-5 py-4">STATUS</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {enriched.directors
-                        .filter(d => selectedDesignation === "All" || d.designation === selectedDesignation)
-                        .map((director, idx) => (
-                          <tr
-                            key={director.id || director.din}
-                            className={`group border-b border-slate-100 last:border-0 hover:bg-[#81BC06]/5 transition-colors ${idx % 2 === 0 ? 'bg-white' : 'bg-[#fafbfc]/50'}`}
-                          >
-                            <td className="px-5 py-4 text-center font-bold text-slate-800">{idx + 1}</td>
-                            <td className="px-5 py-4 text-slate-500 font-mono text-[11px]">
-                              {director.din || "N/A"}
-                            </td>
-                            <td className="px-5 py-4 text-[#002D62] group-hover:text-blue-800 font-black tracking-wide uppercase transition-colors">
-                              {director.name}
-                            </td>
-                            <td className="px-5 py-4 font-black text-slate-700 text-[11px] tracking-wider uppercase">
-                              {director.designation}
-                            </td>
-                            <td className="px-5 py-4 text-slate-600 font-bold tabular-nums">
-                              {director.date_of_appointment || "-"}
-                            </td>
-                            <td className="px-5 py-4">
-                              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-tighter ${director.is_active ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
-                                {director.is_active ? 'Active' : 'N/A'}
-                              </span>
-                            </td>
-                          </tr>
-                        ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* ── TAB: Charges ── */}
-        {activeTab === "Charges" && (
-          <div className="space-y-6">
-            <div className="flex flex-wrap items-center justify-between gap-4">
-              <h2 className="text-xl font-black text-slate-900 tracking-tight uppercase">COMPANY CHARGES</h2>
-              <div className="flex items-center gap-2 px-3 py-1 bg-blue-50 border border-blue-200 rounded text-xs text-blue-700 font-medium">
-                <Landmark className="w-3.5 h-3.5" />
-                Sourced from Secured Financial Creditor Claims
-              </div>
-            </div>
-
-            {isLoading ? (
-              <TabLoader />
-            ) : !enriched?.charges?.length ? (
-              <EmptyTab tab="Charges" />
-            ) : (
-              <div className="grid gap-4">
-                <div className="overflow-x-auto rounded-xl border border-slate-200 shadow-sm bg-white">
-                  <table className="w-full text-left text-sm border-collapse">
-                    <thead className="bg-slate-50 text-slate-500 uppercase font-black text-[10px] tracking-widest border-b border-slate-200">
-                      <tr>
-                        <th className="px-5 py-4">ID</th>
-                        <th className="px-5 py-4">Stakeholder / Bank</th>
-                        <th className="px-5 py-4 text-right">Amount (Claimed)</th>
-                        <th className="px-5 py-4">Status</th>
-                        <th className="px-5 py-4">Information</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {enriched.charges.map((charge, idx) => (
-                        <tr key={charge.chargeId} className="border-b border-slate-100 last:border-0 hover:bg-slate-50">
-                          <td className="px-5 py-4 font-mono text-[10px] text-slate-400">{charge.chargeId}</td>
-                          <td className="px-5 py-4 font-bold text-[#002D62]">{charge.bankName}</td>
-                          <td className="px-5 py-4 text-right font-black text-slate-800">
-                            {charge.amount > 0 ? formatToCr(charge.amount) : "See Details"}
-                          </td>
-                          <td className="px-5 py-4">
-                            <span className="inline-flex items-center px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full text-[10px] font-bold uppercase tracking-tighter">
-                              {charge.status}
-                            </span>
-                          </td>
-                          <td className="px-5 py-4 text-xs text-slate-500 italic max-w-xs">{charge.details || "N/A"}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* ── TAB: Related News ── */}
-        {activeTab === "Related News" && (
-          <div className="space-y-6">
-            <h2 className="text-xl font-black text-slate-900 tracking-tight uppercase">RELATED NEWS</h2>
-            {isLoading ? (
-              <TabLoader />
-            ) : !enriched?.news?.length ? (
-              <EmptyTab tab="Related News" />
-            ) : (
-              <div className="grid gap-4 sm:grid-cols-2">
-                {enriched.news.map((item) => (
-                  <a
-                    key={item.id}
-                    href={item.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className={`p-4 rounded-xl border transition-all flex flex-col gap-3 group bg-white hover:shadow-md ${item.isRelated ? 'border-emerald-200 hover:border-emerald-400' : 'border-slate-200 hover:border-slate-400'}`}
-                  >
-                    <div className="flex justify-between items-start gap-2">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{item.date}</span>
-                      {item.isRelated && (
-                        <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded text-[9px] font-black uppercase tracking-tighter">
-                          Directly Related
-                        </span>
-                      )}
-                    </div>
-                    <h4 className="text-sm font-bold text-slate-900 leading-tight group-hover:text-[#81BC06] transition-colors line-clamp-2">
-                      {item.title}
-                    </h4>
-                    <div className="flex items-center gap-1.5 mt-auto">
-                      <div className="w-5 h-5 rounded-full bg-slate-100 flex items-center justify-center">
-                        <Globe className="w-3 h-3 text-slate-500" />
-                      </div>
-                      <span className="text-xs text-slate-500 font-medium">{item.source}</span>
-                      <ExternalLink className="w-3 h-3 text-slate-300 ml-auto" />
-                    </div>
-                  </a>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
+        </section>
       </div>
     </div>
   );

@@ -15,55 +15,55 @@
     --popover: 0 0% 100%;
     --popover-foreground: 220 25% 10%;
 
-    --primary: 220 70% 45%;
+    --primary: 80 94% 38%;
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 220 15% 95%;
-    --secondary-foreground: 220 25% 10%;
+    --secondary: 80 15% 95%;
+    --secondary-foreground: 80 25% 10%;
 
-    --muted: 220 15% 95%;
-    --muted-foreground: 220 10% 46%;
+    --muted: 80 15% 95%;
+    --muted-foreground: 80 10% 46%;
 
-    --accent: 220 15% 93%;
-    --accent-foreground: 220 25% 10%;
+    --accent: 80 15% 93%;
+    --accent-foreground: 80 25% 10%;
 
     --destructive: 0 72% 51%;
     --destructive-foreground: 0 0% 100%;
 
-    --success: 142 71% 45%;
+    --success: 80 94% 38%;
     --success-foreground: 0 0% 100%;
 
-    --warning: 38 92% 50%;
+    --warning: 45 93% 47%;
     --warning-foreground: 0 0% 100%;
 
     --info: 199 89% 48%;
     --info-foreground: 0 0% 100%;
 
-    --border: 220 13% 91%;
-    --input: 220 13% 91%;
-    --ring: 220 70% 45%;
+    --border: 80 13% 91%;
+    --input: 80 13% 91%;
+    --ring: 80 94% 38%;
 
     --radius: 0.5rem;
 
     --sidebar-background: 0 0% 98%;
-    --sidebar-foreground: 240 5.3% 26.1%;
-    --sidebar-primary: 240 5.9% 10%;
+    --sidebar-foreground: 80 5.3% 26.1%;
+    --sidebar-primary: 80 94% 20%;
     --sidebar-primary-foreground: 0 0% 98%;
-    --sidebar-accent: 240 4.8% 95.9%;
-    --sidebar-accent-foreground: 240 5.9% 10%;
-    --sidebar-border: 220 13% 91%;
-    --sidebar-ring: 217.2 91.2% 59.8%;
+    --sidebar-accent: 80 4.8% 95.9%;
+    --sidebar-accent-foreground: 80 5.9% 10%;
+    --sidebar-border: 80 13% 91%;
+    --sidebar-ring: 80 94% 38%;
 
-    --nav-bg: 220 35% 18%;
+    --nav-bg: 80 94% 12%;
     --nav-foreground: 0 0% 100%;
-    --nav-hover: 220 35% 25%;
+    --nav-hover: 80 94% 18%;
 
-    --stat-positive: 142 71% 45%;
+    --stat-positive: 80 94% 38%;
     --stat-negative: 0 72% 51%;
 
-    --table-header: 220 15% 96%;
-    --table-stripe: 220 15% 98%;
-    --table-border: 220 13% 91%;
+    --table-header: 80 15% 96%;
+    --table-stripe: 80 15% 98%;
+    --table-border: 80 13% 91%;
   }
 
   .dark {
@@ -73,35 +73,35 @@
     --card-foreground: 210 20% 95%;
     --popover: 220 25% 9%;
     --popover-foreground: 210 20% 95%;
-    --primary: 220 70% 55%;
+    --primary: 80 94% 45%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 220 20% 15%;
+    --secondary: 80 20% 15%;
     --secondary-foreground: 210 20% 95%;
-    --muted: 220 20% 15%;
-    --muted-foreground: 220 10% 55%;
-    --accent: 220 20% 15%;
+    --muted: 80 20% 15%;
+    --muted-foreground: 80 10% 55%;
+    --accent: 80 20% 15%;
     --accent-foreground: 210 20% 95%;
     --destructive: 0 62.8% 30.6%;
     --destructive-foreground: 210 40% 98%;
-    --border: 220 20% 18%;
-    --input: 220 20% 18%;
-    --ring: 220 70% 55%;
-    --sidebar-background: 220 25% 8%;
-    --sidebar-foreground: 240 4.8% 95.9%;
-    --sidebar-primary: 224.3 76.3% 48%;
+    --border: 80 20% 18%;
+    --input: 80 20% 18%;
+    --ring: 80 94% 45%;
+    --sidebar-background: 80 25% 8%;
+    --sidebar-foreground: 80 4.8% 95.9%;
+    --sidebar-primary: 80 94% 48%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 220 20% 12%;
-    --sidebar-accent-foreground: 240 4.8% 95.9%;
-    --sidebar-border: 220 20% 18%;
-    --sidebar-ring: 217.2 91.2% 59.8%;
-    --nav-bg: 220 30% 8%;
+    --sidebar-accent: 80 20% 12%;
+    --sidebar-accent-foreground: 80 4.8% 95.9%;
+    --sidebar-border: 80 20% 18%;
+    --sidebar-ring: 80 94% 45%;
+    --nav-bg: 80 30% 8%;
     --nav-foreground: 0 0% 100%;
-    --nav-hover: 220 30% 15%;
-    --stat-positive: 142 71% 45%;
+    --nav-hover: 80 30% 15%;
+    --stat-positive: 80 94% 45%;
     --stat-negative: 0 72% 51%;
-    --table-header: 220 20% 12%;
-    --table-stripe: 220 20% 10%;
-    --table-border: 220 20% 18%;
+    --table-header: 80 20% 12%;
+    --table-stripe: 80 20% 10%;
+    --table-border: 80 20% 18%;
   }
 }
 
@@ -110,9 +110,14 @@
     @apply border-border;
   }
 
+  html {
+    scroll-behavior: smooth;
+  }
+
   body {
     @apply bg-background text-foreground font-sans;
     font-family: 'DM Sans', system-ui, sans-serif;
+    scroll-padding-top: 100px; /* Offset for sticky tabs */
   }
 }
 

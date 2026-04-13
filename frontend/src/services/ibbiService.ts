@@ -177,6 +177,30 @@ export const triggerGlobalRefresh = async (): Promise<{
 };
 
 /**
+ * Triggers a full background sync of all companies in parallel batches.
+ */
+export const triggerFullSync = async (): Promise<any> => {
+  try {
+    return await fetchJson(`/sync/full`, { method: "POST" });
+  } catch (error) {
+    console.error("Full sync trigger failed.", error);
+    return null;
+  }
+};
+
+/**
+ * Fetches the current status of the background sync process and logs.
+ */
+export const fetchSyncStatus = async (): Promise<any> => {
+  try {
+    return await fetchJson(`/sync/status`);
+  } catch (error) {
+    console.error("Failed to fetch sync status.", error);
+    return { activeJob: null, recentLogs: [] };
+  }
+};
+
+/**
  * Fetches all claim versions aggregated together for a specific company.
  * Used for combined PDF report generation.
  */
