@@ -24,6 +24,7 @@ import {
   User,
 } from "lucide-react";
 import { API_BASE_URL, fetchIBBICompanyDetails } from "@/services/ibbiService";
+import { ShowMoreContainer } from "@/components/ShowMoreContainer";
 import DataInsightSheet, { type InsightContent } from "@/components/DataInsightSheet";
 import { StatusBadge } from "@/components/Navbar";
 import IBBICorporateProcess from "@/components/IBBICorporateProcess";
@@ -233,32 +234,38 @@ const AddressTable = ({ addresses, onInspect }: { addresses: CompanyAddress[]; o
   }
 
   return (
-    <div className="overflow-x-auto rounded-lg border border-slate-100">
-      <table className="w-full text-xs">
-        <thead className="bg-slate-50">
-          <tr className="text-left text-[10px] uppercase tracking-[0.15em] text-slate-400">
-            <th className="px-3 py-2">Type</th>
-            <th className="px-3 py-2">Address</th>
-            <th className="px-3 py-2">City</th>
-            <th className="px-3 py-2">State</th>
-            <th className="px-3 py-2">Postal</th>
-            <th className="px-3 py-2">Country</th>
-          </tr>
-        </thead>
-        <tbody>
-          {addresses.map((address, index) => (
-            <tr key={`${address.type}-${index}`} className="border-t border-slate-100 cursor-pointer hover:bg-slate-50" onClick={() => onInspect?.(address)}>
-              <td className="px-3 py-2 font-bold text-slate-700">{address.type}</td>
-              <td className="px-3 py-2 text-slate-600">{address.raw || [address.line1, address.line2, address.line3, address.line4].filter(Boolean).join(", ")}</td>
-              <td className="px-3 py-2 text-slate-600">{address.city && address.city !== "N/A" ? address.city : "-"}</td>
-              <td className="px-3 py-2 text-slate-600">{address.state && address.state !== "N/A" ? address.state : "-"}</td>
-              <td className="px-3 py-2 text-slate-600">{address.postalCode && address.postalCode !== "N/A" ? address.postalCode : "-"}</td>
-              <td className="px-3 py-2 text-slate-600">{address.country && address.country !== "N/A" ? address.country : "-"}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <ShowMoreContainer
+      items={addresses}
+      label="Addresses"
+      renderItems={(visibleItems) => (
+        <div className="overflow-x-auto rounded-lg border border-slate-100">
+          <table className="w-full text-xs">
+            <thead className="bg-slate-50">
+              <tr className="text-left text-[10px] uppercase tracking-[0.15em] text-slate-400">
+                <th className="px-3 py-2">Type</th>
+                <th className="px-3 py-2">Address</th>
+                <th className="px-3 py-2">City</th>
+                <th className="px-3 py-2">State</th>
+                <th className="px-3 py-2">Postal</th>
+                <th className="px-3 py-2">Country</th>
+              </tr>
+            </thead>
+            <tbody>
+              {visibleItems.map((address, index) => (
+                <tr key={`${address.type}-${index}`} className="border-t border-slate-100 cursor-pointer hover:bg-slate-50" onClick={() => onInspect?.(address)}>
+                  <td className="px-3 py-2 font-bold text-slate-700">{address.type}</td>
+                  <td className="px-3 py-2 text-slate-600">{address.raw || [address.line1, address.line2, address.line3, address.line4].filter(Boolean).join(", ")}</td>
+                  <td className="px-3 py-2 text-slate-600">{address.city && address.city !== "N/A" ? address.city : "-"}</td>
+                  <td className="px-3 py-2 text-slate-600">{address.state && address.state !== "N/A" ? address.state : "-"}</td>
+                  <td className="px-3 py-2 text-slate-600">{address.postalCode && address.postalCode !== "N/A" ? address.postalCode : "-"}</td>
+                  <td className="px-3 py-2 text-slate-600">{address.country && address.country !== "N/A" ? address.country : "-"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    />
   );
 };
 
@@ -270,34 +277,40 @@ const ChargesTable = ({ charges, onInspect }: { charges: Charge[]; onInspect?: (
   }
 
   return (
-    <div className="overflow-x-auto rounded-lg border border-slate-100">
-      <table className="w-full text-xs">
-        <thead className="bg-slate-50">
-          <tr className="text-left text-[10px] uppercase tracking-[0.15em] text-slate-400">
-            <th className="px-3 py-2">Charge ID</th>
-            <th className="px-3 py-2">Holder</th>
-            <th className="px-3 py-2">Amount</th>
-            <th className="px-3 py-2">Status</th>
-            <th className="px-3 py-2">Creation</th>
-            <th className="px-3 py-2">Modified / Satisfied</th>
-            <th className="px-3 py-2">Assets</th>
-          </tr>
-        </thead>
-        <tbody>
-          {charges.map((charge, index) => (
-            <tr key={`${charge.chargeId}-${index}`} className="border-t border-slate-100 cursor-pointer hover:bg-slate-50" onClick={() => onInspect?.(charge)}>
-              <td className="px-3 py-2 text-slate-700 font-bold">{charge.chargeId}</td>
-              <td className="px-3 py-2 text-slate-700">{charge.bankName}</td>
-              <td className="px-3 py-2 text-slate-600">{charge.amount && charge.amount > 0 ? formatToCr(charge.amount) : "-"}</td>
-              <td className="px-3 py-2 text-slate-600">{charge.status ? charge.status : "-"}</td>
-              <td className="px-3 py-2 text-slate-600">{charge.creationDate && charge.creationDate !== "N/A" ? charge.creationDate : "-"}</td>
-              <td className="px-3 py-2 text-slate-600">{charge.modificationDate && charge.modificationDate !== "N/A" ? charge.modificationDate : "-"}</td>
-              <td className="px-3 py-2 text-slate-600">{charge.assetsSecured && charge.assetsSecured !== "N/A" ? charge.assetsSecured : "-"}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <ShowMoreContainer
+      items={charges}
+      label="Charges"
+      renderItems={(visibleItems) => (
+        <div className="overflow-x-auto rounded-lg border border-slate-100">
+          <table className="w-full text-xs">
+            <thead className="bg-slate-50">
+              <tr className="text-left text-[10px] uppercase tracking-[0.15em] text-slate-400">
+                <th className="px-3 py-2">Charge ID</th>
+                <th className="px-3 py-2">Holder</th>
+                <th className="px-3 py-2">Amount</th>
+                <th className="px-3 py-2">Status</th>
+                <th className="px-3 py-2">Creation</th>
+                <th className="px-3 py-2">Modified / Satisfied</th>
+                <th className="px-3 py-2">Assets</th>
+              </tr>
+            </thead>
+            <tbody>
+              {visibleItems.map((charge, index) => (
+                <tr key={`${charge.chargeId}-${index}`} className="border-t border-slate-100 cursor-pointer hover:bg-slate-50" onClick={() => onInspect?.(charge)}>
+                  <td className="px-3 py-2 text-slate-700 font-bold">{charge.chargeId}</td>
+                  <td className="px-3 py-2 text-slate-700">{charge.bankName}</td>
+                  <td className="px-3 py-2 text-slate-600">{charge.amount && charge.amount > 0 ? formatToCr(charge.amount) : "-"}</td>
+                  <td className="px-3 py-2 text-slate-600">{charge.status ? charge.status : "-"}</td>
+                  <td className="px-3 py-2 text-slate-600">{charge.creationDate && charge.creationDate !== "N/A" ? charge.creationDate : "-"}</td>
+                  <td className="px-3 py-2 text-slate-600">{charge.modificationDate && charge.modificationDate !== "N/A" ? charge.modificationDate : "-"}</td>
+                  <td className="px-3 py-2 text-slate-600">{charge.assetsSecured && charge.assetsSecured !== "N/A" ? charge.assetsSecured : "-"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    />
   );
 };
 
@@ -353,44 +366,50 @@ const NewsList = ({ news, onInspect }: { news: NewsItem[]; onInspect?: (item: Ne
   }
 
   return (
-    <div className="space-y-2.5">
-      {news.map((item) => (
-        <div
-          key={item.id}
-          role="button"
-          tabIndex={0}
-          onClick={() => onInspect?.(item)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" || event.key === " ") {
-              event.preventDefault();
-              onInspect?.(item);
-            }
-          }}
-          className="w-full rounded-lg border border-slate-200 bg-slate-50 p-3 text-left transition hover:border-[#81BC06]"
-        >
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="flex items-center gap-2 text-[#81BC06]">
-              <Newspaper className="w-4 h-4" />
-              <span className="text-[9px] font-black uppercase tracking-[0.18em] text-slate-500">{item.source}</span>
-            </div>
-            <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">{item.date}</span>
-          </div>
-          <h3 className="mt-2 text-sm font-black text-slate-900">{item.title}</h3>
-          <p className="mt-1 text-xs leading-5 text-slate-600">{item.summary}</p>
-          {item.url && (
-            <a
-              href={item.url}
-              target="_blank"
-              rel="noreferrer"
-              className="mt-3 inline-flex items-center gap-2 text-xs font-bold text-[#81BC06] hover:underline"
+    <ShowMoreContainer
+      items={news}
+      label="News Updates"
+      renderItems={(visibleItems) => (
+        <div className="space-y-2.5">
+          {visibleItems.map((item) => (
+            <div
+              key={item.id}
+              role="button"
+              tabIndex={0}
+              onClick={() => onInspect?.(item)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  onInspect?.(item);
+                }
+              }}
+              className="w-full rounded-lg border border-slate-200 bg-slate-50 p-3 text-left transition hover:border-[#81BC06]"
             >
-              Open update
-              <ArrowUpRight className="w-4 h-4" />
-            </a>
-          )}
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="flex items-center gap-2 text-[#81BC06]">
+                  <Newspaper className="w-4 h-4" />
+                  <span className="text-[9px] font-black uppercase tracking-[0.18em] text-slate-500">{item.source}</span>
+                </div>
+                <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">{item.date}</span>
+              </div>
+              <h3 className="mt-2 text-sm font-black text-slate-900">{item.title}</h3>
+              <p className="mt-1 text-xs leading-5 text-slate-600">{item.summary}</p>
+              {item.url && (
+                <a
+                  href={item.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-3 inline-flex items-center gap-2 text-xs font-bold text-[#81BC06] hover:underline"
+                >
+                  Open update
+                  <ArrowUpRight className="w-4 h-4" />
+                </a>
+              )}
+            </div>
+          ))}
         </div>
-      ))}
-    </div>
+      )}
+    />
   );
 };
 
@@ -406,60 +425,66 @@ const DocumentsList = ({ documents, onInspect }: { documents: CompanyDocument[];
   }
 
   return (
-    <div className="grid gap-2.5 md:grid-cols-2">
-      {documents.map((document) => (
-        <div
-          key={`${document.formId}-${document.fileName}`}
-          role="button"
-          tabIndex={0}
-          onClick={() => onInspect?.(document)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" || event.key === " ") {
-              event.preventDefault();
-              onInspect?.(document);
-            }
-          }}
-          className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-left transition hover:border-[#81BC06]"
-        >
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <p className="text-[9px] font-black uppercase tracking-[0.15em] text-slate-400">{document.category}</p>
-              <h3 className="mt-1 text-xs font-black text-slate-900 break-words">{document.fileName}</h3>
+    <ShowMoreContainer
+      items={documents}
+      label="Documents"
+      renderItems={(visibleItems) => (
+        <div className="grid gap-2.5 md:grid-cols-2">
+          {visibleItems.map((document) => (
+            <div
+              key={`${document.formId}-${document.fileName}`}
+              role="button"
+              tabIndex={0}
+              onClick={() => onInspect?.(document)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  onInspect?.(document);
+                }
+              }}
+              className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-left transition hover:border-[#81BC06]"
+            >
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-[9px] font-black uppercase tracking-[0.15em] text-slate-400">{document.category}</p>
+                  <h3 className="mt-1 text-xs font-black text-slate-900 break-words">{document.fileName}</h3>
+                </div>
+                <Download className="w-5 h-5 text-[#81BC06]" />
+              </div>
+              <div className="mt-3 space-y-1 text-xs text-slate-600">
+                <SourceMeta label="Source" value={document.source || "N/A"} />
+                <SourceMeta label="Date" value={document.dateOfFiling || "N/A"} />
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {document.url && (
+                  <a
+                    href={resolveDocumentUrl(document.url)}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 hover:border-[#81BC06]"
+                  >
+                    Open
+                    <ArrowUpRight className="w-4 h-4" />
+                  </a>
+                )}
+                {document.downloadUrl && (
+                  <a
+                    href={resolveDocumentUrl(document.downloadUrl)}
+                    target="_blank"
+                    rel="noreferrer"
+                    download
+                    className="inline-flex items-center gap-2 rounded-lg bg-[#81BC06] px-3 py-1.5 text-xs font-bold text-white"
+                  >
+                    Download
+                    <Download className="w-4 h-4" />
+                  </a>
+                )}
+              </div>
             </div>
-            <Download className="w-5 h-5 text-[#81BC06]" />
-          </div>
-          <div className="mt-3 space-y-1 text-xs text-slate-600">
-            <SourceMeta label="Source" value={document.source || "N/A"} />
-            <SourceMeta label="Date" value={document.dateOfFiling || "N/A"} />
-          </div>
-          <div className="mt-3 flex flex-wrap gap-2">
-            {document.url && (
-              <a
-                href={resolveDocumentUrl(document.url)}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 hover:border-[#81BC06]"
-              >
-                Open
-                <ArrowUpRight className="w-4 h-4" />
-              </a>
-            )}
-            {document.downloadUrl && (
-              <a
-                href={resolveDocumentUrl(document.downloadUrl)}
-                target="_blank"
-                rel="noreferrer"
-                download
-                className="inline-flex items-center gap-2 rounded-lg bg-[#81BC06] px-3 py-1.5 text-xs font-bold text-white"
-              >
-                Download
-                <Download className="w-4 h-4" />
-              </a>
-            )}
-          </div>
+          ))}
         </div>
-      ))}
-    </div>
+      )}
+    />
   );
 };
 

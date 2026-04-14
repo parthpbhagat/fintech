@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useLocation, useNavigate, Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
   ArrowRight,
@@ -21,6 +21,7 @@ import { fetchIBBIFeaturedCompanies, fetchIBBIStats, IbbiApiError, searchIBBICom
 import { StatusBadge } from "@/components/Navbar";
 import { useAuth } from "@/contexts/AuthContext";
 import type { Company } from "@/data/types";
+import { ShowMoreContainer } from "@/components/ShowMoreContainer";
 import AIChatAssistant from "@/components/AIChatAssistant";
 
 const numberFormatter = new Intl.NumberFormat("en-IN");
@@ -343,7 +344,7 @@ const Index = () => {
 
       <section className="relative py-16 md:py-24 flex flex-col items-center justify-center bg-[#F8FAFC] overflow-hidden">
         <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(circle_at_30%_20%,#81BC0615_0%,transparent_40%),radial-gradient(circle_at_70%_60%,#1f8bff10_0%,transparent_40%)]" />
-        
+
         <div className="mb-8 text-center relative z-10 px-4">
           <div className="inline-flex items-center gap-2 rounded-full bg-[#81BC06]/10 px-4 py-1.5 text-[10px] font-black uppercase tracking-[0.2em] text-[#81BC06] mb-6">
             <Sparkles className="h-3 w-3" />
@@ -467,23 +468,20 @@ const Index = () => {
           </form>
         </div>
 
-        <div className="mt-4 flex flex-wrap justify-center gap-2 max-w-5xl">
+        <div className="mt-4 flex flex-wrap justify-center gap-2 max-w-5xl relative z-10">
           <span className="text-xs font-bold text-slate-800 uppercase mt-1 mr-2">Try recent:</span>
           {quickSearches.map((company) => (
-            <button
+            <Link
               key={company.id}
-              onClick={() => {
-                setSelectedSearchMode(searchModes[0]);
-                runSearch(company.name, "company");
-              }}
-              className="px-3 py-1 bg-white border border-slate-200 rounded-full text-[10px] text-slate-500 font-medium hover:border-[#81BC06] transition-colors"
+              to={`/company/${company.id}`}
+              className="px-3 py-1 bg-white border border-slate-200 rounded-full text-[10px] text-blue-600 font-medium hover:underline hover:text-blue-800 hover:border-blue-300 cursor-pointer transition-colors shadow-sm"
             >
               {company.name}
-            </button>
+            </Link>
           ))}
         </div>
 
-        <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
+        <div className="mt-5 flex flex-wrap items-center justify-center gap-2 relative z-10">
           <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">
             <SlidersHorizontal className="w-3.5 h-3.5 text-[#81BC06]" />
             Filters
@@ -583,11 +581,17 @@ const Index = () => {
                 {companies.length} live match{companies.length === 1 ? "" : "es"} from current filters
               </p>
             </div>
-            <div className="grid gap-3 lg:grid-cols-2">
-              {companies.map((company) => (
-                <CompanyCard key={company.id} company={company} onClick={() => navigate(`/company/${company.id}`)} />
-              ))}
-            </div>
+            <ShowMoreContainer
+              items={companies}
+              label="Matches"
+              renderItems={(visibleItems) => (
+                <div className="grid gap-3 lg:grid-cols-2">
+                  {visibleItems.map((company) => (
+                    <CompanyCard key={company.id} company={company} onClick={() => navigate(`/company/${company.id}`)} />
+                  ))}
+                </div>
+              )}
+            />
           </div>
         )}
 
@@ -606,11 +610,17 @@ const Index = () => {
               <h2 className="text-xl font-bold text-slate-800 border-l-4 border-[#81BC06] pl-4">Latest Registry Activity</h2>
               <p className="text-sm text-slate-500">Fresh companies from the current filtered dataset</p>
             </div>
-            <div className="grid gap-3 lg:grid-cols-2">
-              {filteredFeaturedCompanies.slice(0, 10).map((company) => (
-                <CompanyCard key={company.id} company={company} onClick={() => navigate(`/company/${company.id}`)} />
-              ))}
-            </div>
+            <ShowMoreContainer
+              items={filteredFeaturedCompanies}
+              label="Records"
+              renderItems={(visibleItems) => (
+                <div className="grid gap-3 lg:grid-cols-2">
+                  {visibleItems.map((company) => (
+                    <CompanyCard key={company.id} company={company} onClick={() => navigate(`/company/${company.id}`)} />
+                  ))}
+                </div>
+              )}
+            />
           </div>
         )}
       </section>

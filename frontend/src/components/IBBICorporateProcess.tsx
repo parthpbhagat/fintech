@@ -40,6 +40,8 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate, useParams } from "react-router-dom";
 import type { Company, CorporateProcessRow, CorporateProcessSection } from "@/data/types";
+import { DEFAULT_LIST_LIMIT } from "@/data/types";
+import { ShowMoreContainer } from "@/components/ShowMoreContainer";
 import {
   API_BASE_URL,
   fetchIBBICompanyDetails,
@@ -174,30 +176,36 @@ const ProcessTable = ({ section }: { section: CorporateProcessSection }) => {
   }
 
   return (
-    <div className="overflow-x-auto border border-slate-300 rounded">
-      <table className="w-full text-left text-sm min-w-[820px]">
-        <thead className="bg-slate-900 text-white">
-          <tr>
-            {section.headers.map((header) => (
-              <th key={header} className="p-2.5 font-bold border-r border-blue-700 last:border-r-0">
-                {header}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {section.rows.map((row) => (
-            <tr key={row.id} className="border-b border-slate-200 last:border-0 hover:bg-slate-50 align-top">
-              {section.headers.map((header) => (
-                <td key={`${row.id}-${header}`} className="p-2.5 border-r border-slate-200 last:border-r-0 text-slate-700 text-xs">
-                  {renderLinkedCell(header, row)}
-                </td>
+    <ShowMoreContainer
+      items={section.rows}
+      label={section.title}
+      renderItems={(visibleRows) => (
+        <div className="overflow-x-auto border border-slate-300 rounded shadow-sm">
+          <table className="w-full text-left text-sm min-w-[820px]">
+            <thead className="bg-slate-900 text-white">
+              <tr>
+                {section.headers.map((header) => (
+                  <th key={header} className="p-2.5 font-bold border-r border-blue-700 last:border-r-0">
+                    {header}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {visibleRows.map((row) => (
+                <tr key={row.id} className="border-b border-slate-200 last:border-0 hover:bg-slate-50 align-top">
+                  {section.headers.map((header) => (
+                    <td key={`${row.id}-${header}`} className="p-2.5 border-r border-slate-200 last:border-r-0 text-slate-700 text-xs">
+                      {renderLinkedCell(header, row)}
+                    </td>
+                  ))}
+                </tr>
               ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+            </tbody>
+          </table>
+        </div>
+      )}
+    />
   );
 };
 
@@ -287,7 +295,6 @@ const ClaimsSubNavigation = ({ versions, onSelect }: { versions: any[], onSelect
 };
 
 const ClaimsCategoryTable = ({ category, data }: { category: string, data: { headers: string[], rows: any[] } }) => {
-  const [limit, setLimit] = useState(5);
   const id = `claim-cat-${category.toLowerCase().replace(/[^a-z0-9]/g, "-")}`;
   
   if (!data?.rows?.length) return null;
@@ -304,49 +311,36 @@ const ClaimsCategoryTable = ({ category, data }: { category: string, data: { hea
         </h5>
       </div>
       
-      <div className="overflow-x-auto border border-slate-200 rounded-lg shadow-sm bg-white">
-        <table className="w-full text-left text-[10px] border-collapse min-w-[1000px]">
-          <thead className="bg-slate-50 border-b border-slate-200">
-            <tr>
-              {data.headers.map((h, i) => (
-                <th key={i} className="p-2.5 font-bold text-slate-600 border-r border-slate-200 last:border-r-0 whitespace-nowrap">
-                  {h}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {data.rows.slice(0, limit).map((row, rIdx) => (
-              <tr key={rIdx} className="border-b border-slate-100 last:border-0 hover:bg-primary/5 transition-colors">
-                {data.headers.map((h, cIdx) => (
-                  <td key={cIdx} className="p-2.5 text-slate-700 border-r border-slate-100 last:border-r-0">
-                    {row[h] || "-"}
-                  </td>
+      <ShowMoreContainer
+        items={data.rows}
+        label={category}
+        renderItems={(visibleRows) => (
+          <div className="overflow-x-auto border border-slate-200 rounded-lg shadow-sm bg-white">
+            <table className="w-full text-left text-[10px] border-collapse min-w-[1000px]">
+              <thead className="bg-slate-50 border-b border-slate-200">
+                <tr>
+                  {data.headers.map((h, i) => (
+                    <th key={i} className="p-2.5 font-bold text-slate-600 border-r border-slate-200 last:border-r-0 whitespace-nowrap">
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {visibleRows.map((row, rIdx) => (
+                  <tr key={rIdx} className="border-b border-slate-100 last:border-0 hover:bg-primary/5 transition-colors">
+                    {data.headers.map((h, cIdx) => (
+                      <td key={cIdx} className="p-2.5 text-slate-700 border-r border-slate-100 last:border-r-0">
+                        {row[h] || "-"}
+                      </td>
+                    ))}
+                  </tr>
                 ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      <div className="flex flex-col items-center gap-2">
-        {data.rows.length > limit && (
-          <button
-            onClick={() => setLimit(prev => prev + 20)}
-            className="px-5 py-2 bg-white border border-primary/30 text-primary rounded-full text-[9px] font-black uppercase tracking-widest hover:bg-primary hover:text-white transition-all active:scale-95 shadow-sm flex items-center gap-1.5"
-          >
-            <Plus className="w-3 h-3" /> Show More {category}
-          </button>
+              </tbody>
+            </table>
+          </div>
         )}
-        {limit > 5 && (
-          <button
-            onClick={() => setLimit(5)}
-            className="text-[9px] font-bold text-slate-400 hover:text-slate-600 uppercase tracking-widest transition-colors flex items-center gap-1"
-          >
-            Show Less
-          </button>
-        )}
-      </div>
+      />
     </div>
   );
 };
@@ -404,54 +398,95 @@ const DetailedClaimsView = ({ data }: { data: any[] }) => {
 
             {/* Summary Overview */}
             <div className="space-y-6">
-              <div className="overflow-hidden border border-slate-200 rounded-xl shadow-sm bg-white">
-                <table className="w-full text-left border-collapse">
+              {/* Global Documents */}
+              {version.globalDocs && version.globalDocs.length > 0 && (
+                <div className="mb-4 space-y-2">
+                  <h5 className="text-[10px] font-black uppercase text-slate-500 flex items-center gap-2 tracking-widest border-b border-slate-100 pb-2">
+                    <FileText className="w-3.5 h-3.5" /> Associated Claims Documents
+                  </h5>
+                  <div className="flex flex-wrap gap-2">
+                    {version.globalDocs.map((doc: any, dIdx: number) => (
+                      <a
+                        key={dIdx}
+                        href={doc.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 text-blue-700 hover:bg-blue-600 hover:text-white rounded text-[10px] font-bold transition-colors"
+                      >
+                        <Download className="w-3 h-3" />
+                        {doc.title}
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="overflow-x-auto border border-slate-200 rounded-xl shadow-sm bg-white">
+                <table className="w-full text-left border-collapse min-w-[1200px]">
                   <thead>
                     <tr className="bg-slate-900 text-white">
                       <th rowSpan={2} className="p-3 text-[10px] font-bold border-r border-blue-900/50 w-12 text-center uppercase tracking-tighter">Sr. No.</th>
-                      <th rowSpan={2} className="p-3 text-[10px] font-bold border-r border-blue-900/50 uppercase tracking-tighter">Category of stakeholders</th>
-                      <th colSpan={2} className="p-2 text-[9px] font-black border-b border-blue-900/50 text-center bg-[#F5B841] text-slate-900 uppercase tracking-[0.1em]">Summary of Claims Received</th>
-                      <th colSpan={2} className="p-2 text-[9px] font-black border-b border-blue-900/50 text-center bg-primary text-white uppercase tracking-[0.1em]">Summary of Claims Admitted</th>
+                      <th rowSpan={2} className="p-3 text-[10px] font-bold border-r border-blue-900/50 min-w-[150px] uppercase tracking-tighter">Category of stakeholders</th>
+                      <th colSpan={2} className="p-2 text-[9px] font-black border-b border-r border-blue-900/50 text-center bg-[#F5B841] text-slate-900 uppercase tracking-[0.1em]">Summary of Claims Received</th>
+                      <th colSpan={2} className="p-2 text-[9px] font-black border-b border-r border-blue-900/50 text-center bg-primary text-white uppercase tracking-[0.1em]">Summary of Claims Admitted</th>
+                      <th rowSpan={2} className="p-3 text-[10px] font-bold border-r border-blue-900/50 text-center uppercase tracking-tighter max-w-[90px]">Amount of contingent claims</th>
+                      <th rowSpan={2} className="p-3 text-[10px] font-bold border-r border-blue-900/50 text-center uppercase tracking-tighter max-w-[90px]">Amount of claims rejected</th>
+                      <th rowSpan={2} className="p-3 text-[10px] font-bold border-r border-blue-900/50 text-center uppercase tracking-tighter max-w-[90px]">Amount of Claims under Verification</th>
+                      <th rowSpan={2} className="p-3 text-[10px] font-bold border-r border-blue-900/50 text-center uppercase tracking-tighter min-w-[100px]">Details in Annexure</th>
+                      <th rowSpan={2} className="p-3 text-[10px] font-bold uppercase tracking-tighter min-w-[100px]">Remarks, if any</th>
                     </tr>
                     <tr className="bg-slate-50 text-slate-600 text-[9px] font-bold uppercase tracking-tight">
-                      <th className="p-2 text-center border-r border-slate-200">No. of Claims</th>
-                      <th className="p-2 text-center border-r border-slate-200">Amount (Rs.)</th>
-                      <th className="p-2 text-center border-r border-slate-200">No. of Claims</th>
-                      <th className="p-2 text-center">Amount Admitted</th>
+                      <th className="p-2 text-center border-r border-b border-slate-200">No. of Claims</th>
+                      <th className="p-2 text-center border-r border-b border-slate-200">Amount (Rs.)</th>
+                      <th className="p-2 text-center border-r border-b border-slate-200">No. of Claims</th>
+                      <th className="p-2 text-center border-r border-b border-slate-200">Amount Admitted</th>
                     </tr>
                   </thead>
                   <tbody>
                     {version.summaryTable && version.summaryTable.length > 0 ? (
                       version.summaryTable.map((row: any, rIdx: number) => {
                         const isTotal = row.category?.toLowerCase().includes("total");
-                        const catId = `claim-cat-${row.category?.toLowerCase().replace(/[^a-z0-9]/g, "-")}`;
-                        const hasDetails = version.details && version.details[row.category];
 
                         return (
                           <tr
                             key={rIdx}
-                            onClick={() => hasDetails && scrollToAnchor(catId)}
                             className={`
                               border-b border-slate-100 last:border-0 transition-colors
-                              ${isTotal ? "bg-slate-100 font-bold text-slate-900 border-t-2 border-slate-300" : "text-slate-700"}
-                              ${hasDetails ? "hover:bg-primary/5 cursor-pointer" : "hover:bg-slate-50"}
+                              ${isTotal ? "bg-slate-100 font-bold text-slate-900 border-t-2 border-slate-300" : "text-slate-700 hover:bg-slate-50"}
                             `}
                           >
                             <td className="p-2.5 text-center border-r border-slate-100 text-[10px]">{row.srNo}</td>
-                            <td className="p-2.5 border-r border-slate-100 font-medium text-[11px] flex items-center justify-between gap-2">
-                              {row.category}
-                              {hasDetails && <ChevronRight className="w-3 h-3 text-primary opacity-50" />}
-                            </td>
+                            <td className="p-2.5 border-r border-slate-100 font-medium text-[11px] whitespace-pre-wrap">{row.category}</td>
                             <td className="p-2.5 text-center border-r border-slate-100 text-[11px] bg-slate-50/50">{row.receivedCount || "0"}</td>
                             <td className="p-2.5 text-right border-r border-slate-100 px-4 text-[11px] tabular-nums bg-slate-50/50">{row.receivedAmount || "0"}</td>
                             <td className="p-2.5 text-center border-r border-slate-100 text-[11px] font-bold text-primary">{row.admittedCount || "0"}</td>
-                            <td className="p-2.5 text-right px-4 text-[11px] tabular-nums font-bold text-primary">{row.admittedAmount || "0"}</td>
+                            <td className="p-2.5 text-right border-r border-slate-100 px-4 text-[11px] tabular-nums font-bold text-primary">{row.admittedAmount || "0"}</td>
+                            <td className="p-2.5 text-right border-r border-slate-100 px-3 text-[10px] tabular-nums">{row.contingentAmount || "0"}</td>
+                            <td className="p-2.5 text-right border-r border-slate-100 px-3 text-[10px] tabular-nums text-red-600 font-medium">{row.rejectedAmount || "0"}</td>
+                            <td className="p-2.5 text-right border-r border-slate-100 px-3 text-[10px] tabular-nums text-amber-600 font-medium">{row.underVerificationAmount || "0"}</td>
+                            <td className="p-2.5 text-center border-r border-slate-100 text-[10px]">
+                              {row.documentLink ? (
+                                <a
+                                  href={row.documentLink}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="inline-flex items-center gap-1 px-3 py-1.5 bg-red-50 text-red-700 hover:bg-red-600 hover:text-white rounded transition-colors font-bold whitespace-nowrap shadow-sm"
+                                >
+                                  <FileText className="w-3 h-3" /> View PDF
+                                </a>
+                              ) : (
+                                <span className="text-slate-300">-</span>
+                              )}
+                            </td>
+                            <td className="p-2.5 text-[10px] text-slate-500 max-w-[150px] truncate" title={row.remarks || ""}>
+                              {row.remarks || ""}
+                            </td>
                           </tr>
                         );
                       })
                     ) : (
                       <tr>
-                        <td colSpan={6} className="p-8 text-center text-slate-400 italic text-xs">
+                        <td colSpan={11} className="p-8 text-center text-slate-400 italic text-xs">
                           No summary data found.
                         </td>
                       </tr>
@@ -459,19 +494,6 @@ const DetailedClaimsView = ({ data }: { data: any[] }) => {
                   </tbody>
                 </table>
               </div>
-
-              {/* Detailed Category Sections */}
-              {version.details && Object.keys(version.details).length > 0 && (
-                <div className="mt-10 space-y-12 pl-6 border-l-2 border-slate-100">
-                  {Object.entries(version.details).map(([cat, detailData]: [string, any]) => (
-                    <ClaimsCategoryTable
-                      key={cat}
-                      category={cat}
-                      data={detailData}
-                    />
-                  ))}
-                </div>
-              )}
             </div>
 
             {/* Quick footer link */}
@@ -649,8 +671,6 @@ const IBBICorporateProcess = ({ company }: IBBICorporateProcessProps) => {
   const [isLoadingProf, setIsLoadingProf] = useState(false);
   const [activeProfTab, setActiveProfTab] = useState<string>("IP Detail");
   const [analyticsViewMode, setAnalyticsViewMode] = useState<"table" | "graph">("table");
-  const [docsLimit, setDocsLimit] = useState(5);
-  const [announcementsLimit, setAnnouncementsLimit] = useState(5);
 
   // Update URL to include company slug if missing
   useEffect(() => {
@@ -793,7 +813,6 @@ const IBBICorporateProcess = ({ company }: IBBICorporateProcessProps) => {
     }
   };
 
-  const documents = enriched?.documents ?? company.documents ?? [];
   const corporateProcesses = enriched?.corporateProcesses ?? company.corporateProcesses ?? {};
 
   const detailsSection = corporateProcesses.detailsAboutCd;
@@ -814,8 +833,9 @@ const IBBICorporateProcess = ({ company }: IBBICorporateProcessProps) => {
 
   // ── All eligible docs — filtered by type AND deduplicated by URL ──────────
   const allDocs = useMemo(() => {
+    const docs = enriched?.documents ?? company.documents ?? [];
     const seenUrls = new Set<string>();
-    return documents.filter((d) => {
+    return docs.filter((d) => {
       const ft = d.fileType || "";
       const nameLower = d.fileName.toLowerCase();
       const urlLower = (d.url || "").toLowerCase();
@@ -832,7 +852,7 @@ const IBBICorporateProcess = ({ company }: IBBICorporateProcessProps) => {
       seenUrls.add(urlKey);
       return true;
     });
-  }, [documents]);
+  }, [enriched?.documents, company.documents]);
 
   // ── Extract unique categories for filter dropdown ──────────────────────────
   const categories = useMemo(() => {
@@ -1062,9 +1082,10 @@ const IBBICorporateProcess = ({ company }: IBBICorporateProcessProps) => {
                         <div>
                           {/* Sub Tabs */}
                           <div className="flex border-b border-slate-200 bg-white overflow-x-auto scrollbar-hide">
-                            {[...Object.keys(profData.sections).filter(k => k !== "_scraped_at" && !k.toLowerCase().includes("afa"))].map((tab) => {
+                            {[...Object.keys(profData.sections).filter(k => k !== "_scraped_at")].map((tab) => {
                               const labelMap: Record<string, string> = {
                                 "IP Detail": "IP Details",
+                                "AFA Detail": "AFA History",
                                 "Assignment Detail": "Assignment Details",
                                 "Assignment Details": "Assignment Details",
                                 "CPE Detail": "CPE Details",
@@ -1166,48 +1187,55 @@ const IBBICorporateProcess = ({ company }: IBBICorporateProcessProps) => {
 
                                       if (section.type === "horizontal") {
                                         return (
-                                          <div key={sIdx} className="border border-slate-200 rounded-lg overflow-hidden shadow-sm">
-                                            <div className="overflow-x-auto">
-                                              <table className="w-full text-left text-[11px]">
-                                                <thead className="bg-slate-900 text-white uppercase font-bold border-b border-slate-200">
-                                                  <tr>
-                                                    {section.headers.map((h: string) => (
-                                                      <th key={h} className="p-3 font-bold tracking-tight border-r border-blue-800/50 last:border-r-0 whitespace-nowrap">{h}</th>
-                                                    ))}
-                                                  </tr>
-                                                </thead>
-                                                <tbody>
-                                                  {section.data.map((row: any, i: number) => (
-                                                    <tr key={i} className={`border-b border-slate-100 last:border-0 hover:bg-blue-50/30 transition-colors ${i % 2 === 0 ? 'bg-white' : 'bg-slate-50/30'}`}>
-                                                      {section.headers.map((h: string) => {
-                                                        const val = row[h];
-                                                        const hLower = h.toLowerCase();
-                                                        if ((hLower.includes("cin") || hLower.includes("corp")) && val && val !== "NA" && val !== "N/A" && val !== "-") {
-                                                          return (
-                                                            <td key={h} className="p-2 border-r border-slate-100 last:border-r-0">
-                                                              <a
-                                                                href={`/company/${val}`}
-                                                                target="_blank"
-                                                                rel="noreferrer"
-                                                                className="text-blue-600 font-bold hover:underline"
-                                                              >
-                                                                {val}
-                                                              </a>
-                                                            </td>
-                                                          );
-                                                        }
-                                                        return (
-                                                          <td key={h} className="p-2 text-slate-700 border-r border-slate-100 last:border-r-0">
-                                                            {renderValueWithCheck(val)}
-                                                          </td>
-                                                        );
-                                                      })}
-                                                    </tr>
-                                                  ))}
-                                                </tbody>
-                                              </table>
-                                            </div>
-                                          </div>
+                                          <ShowMoreContainer
+                                            key={sIdx}
+                                            items={section.data}
+                                            label={activeProfTab}
+                                            renderItems={(visibleRows) => (
+                                              <div className="border border-slate-200 rounded-lg overflow-hidden shadow-sm">
+                                                <div className="overflow-x-auto">
+                                                  <table className="w-full text-left text-[11px]">
+                                                    <thead className="bg-slate-900 text-white uppercase font-bold border-b border-slate-200">
+                                                      <tr>
+                                                        {section.headers.map((h: string) => (
+                                                          <th key={h} className="p-3 font-bold tracking-tight border-r border-blue-800/50 last:border-r-0 whitespace-nowrap">{h}</th>
+                                                        ))}
+                                                      </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                      {visibleRows.map((row: any, i: number) => (
+                                                        <tr key={i} className={`border-b border-slate-100 last:border-0 hover:bg-blue-50/30 transition-colors ${i % 2 === 0 ? 'bg-white' : 'bg-slate-50/30'}`}>
+                                                          {section.headers.map((h: string) => {
+                                                            const val = row[h];
+                                                            const hLower = h.toLowerCase();
+                                                            if ((hLower.includes("cin") || hLower.includes("corp")) && val && val !== "NA" && val !== "N/A" && val !== "-") {
+                                                              return (
+                                                                <td key={h} className="p-2 border-r border-slate-100 last:border-r-0">
+                                                                  <a
+                                                                    href={`/company/${val}`}
+                                                                    target="_blank"
+                                                                    rel="noreferrer"
+                                                                    className="text-blue-600 font-bold hover:underline"
+                                                                  >
+                                                                    {val}
+                                                                  </a>
+                                                                </td>
+                                                              );
+                                                            }
+                                                            return (
+                                                              <td key={h} className="p-2 text-slate-700 border-r border-slate-100 last:border-r-0">
+                                                                {renderValueWithCheck(val)}
+                                                              </td>
+                                                            );
+                                                          })}
+                                                        </tr>
+                                                      ))}
+                                                    </tbody>
+                                                  </table>
+                                                </div>
+                                              </div>
+                                            )}
+                                          />
                                         );
                                       }
                                       return null;
@@ -1326,110 +1354,94 @@ const IBBICorporateProcess = ({ company }: IBBICorporateProcessProps) => {
                     </button>
                   </div>
                 ) : (
-                  <div className="space-y-4">
-                    <div className="border border-slate-300 rounded overflow-x-auto">
-                      <table className="w-full text-left text-sm min-w-[560px]">
-                        <thead className="bg-slate-100 border-b border-slate-300">
-                          <tr>
-                            <th className="p-2.5 font-bold border-r border-slate-300 text-slate-600">Category</th>
-                            <th className="p-2.5 font-bold border-r border-slate-300 text-slate-600 w-[44%]">File Name</th>
-                            <th className="p-2.5 font-bold border-r border-slate-300 text-slate-600">Source</th>
-                            <th className="p-2.5 font-bold border-r border-slate-300 text-slate-600">Date</th>
-                            <th className="p-2.5 font-bold text-slate-600 text-center w-28">Download</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {filteredDocs.slice(0, docsLimit).map((doc, idx) => {
-                            const href = resolveDocUrl(doc.downloadUrl || doc.url);
-                            const { label, color, icon } = getFileInfo(doc);
-                            const isPdf = label === "PDF";
-                            const readableName = prettifyFileName(doc.fileName);
-                            return (
-                              <tr
-                                key={idx}
-                                className="border-b border-slate-200 last:border-0 hover:bg-primary/5 transition-colors"
-                              >
-                                {/* Category — pill badge */}
-                                <td className="p-2.5 border-r border-slate-200 text-xs">
-                                  <span className="inline-flex items-center px-2 py-0.5 bg-slate-100 text-slate-600 rounded-full text-[10px] font-medium">
-                                    {doc.category || "General"}
-                                  </span>
-                                </td>
+                  <ShowMoreContainer
+                    items={filteredDocs}
+                    label="Documents"
+                    renderItems={(visibleDocs) => (
+                      <div className="border border-slate-300 rounded overflow-x-auto">
+                        <table className="w-full text-left text-sm min-w-[560px]">
+                          <thead className="bg-slate-100 border-b border-slate-300">
+                            <tr>
+                              <th className="p-2.5 font-bold border-r border-slate-300 text-slate-600">Category</th>
+                              <th className="p-2.5 font-bold border-r border-slate-300 text-slate-600 w-[44%]">File Name</th>
+                              <th className="p-2.5 font-bold border-r border-slate-300 text-slate-600">Source</th>
+                              <th className="p-2.5 font-bold border-r border-slate-300 text-slate-600">Date</th>
+                              <th className="p-2.5 font-bold text-slate-600 text-center w-28">Download</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {visibleDocs.map((doc, idx) => {
+                              const href = resolveDocUrl(doc.downloadUrl || doc.url);
+                              const { label, color, icon } = getFileInfo(doc);
+                              const isPdf = label === "PDF";
+                              const readableName = prettifyFileName(doc.fileName);
+                              return (
+                                <tr
+                                  key={idx}
+                                  className="border-b border-slate-200 last:border-0 hover:bg-primary/5 transition-colors"
+                                >
+                                  {/* Category — pill badge */}
+                                  <td className="p-2.5 border-r border-slate-200 text-xs">
+                                    <span className="inline-flex items-center px-2 py-0.5 bg-slate-100 text-slate-600 rounded-full text-[10px] font-medium">
+                                      {doc.category || "General"}
+                                    </span>
+                                  </td>
 
-                                {/* File Name — readable, not raw slug */}
-                                <td className="p-2.5 border-r border-slate-200">
-                                  <a
-                                    href={href}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="text-blue-600 hover:text-blue-800 underline text-xs"
-                                    title={doc.fileName}
-                                  >
-                                    {readableName.length > 60
-                                      ? readableName.substring(0, 60) + "…"
-                                      : readableName}
-                                  </a>
-                                </td>
-
-                                {/* Source */}
-                                <td className="p-2.5 border-r border-slate-200 text-slate-400 text-xs">
-                                  {doc.source || "-"}
-                                </td>
-
-                                {/* Date */}
-                                <td className="p-2.5 border-r border-slate-200 text-slate-400 text-xs">
-                                  {doc.dateOfFiling || "-"}
-                                </td>
-
-                                {/* Download — blob download for PDF, open for others */}
-                                <td className="p-2.5 text-center">
-                                  {isPdf ? (
-                                    <button
-                                      onClick={() => downloadPdf(href, doc.fileName)}
-                                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 ${color} text-white rounded text-xs font-bold transition-all shadow-sm active:scale-95 hover:opacity-90`}
-                                    >
-                                      <Download className="w-3 h-3" />
-                                      {label}
-                                    </button>
-                                  ) : (
+                                  {/* File Name — readable, not raw slug */}
+                                  <td className="p-2.5 border-r border-slate-200">
                                     <a
                                       href={href}
                                       target="_blank"
                                       rel="noreferrer"
-                                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 ${color} text-white rounded text-xs font-bold transition-all shadow-sm active:scale-95`}
+                                      className="text-blue-600 hover:text-blue-800 underline text-xs"
+                                      title={doc.fileName}
                                     >
-                                      {icon}
-                                      {label}
+                                      {readableName.length > 60
+                                        ? readableName.substring(0, 60) + "…"
+                                        : readableName}
                                     </a>
-                                  )}
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
+                                  </td>
 
-                    <div className="flex flex-col items-center gap-3 pt-2">
-                      {filteredDocs.length > docsLimit && (
-                        <button
-                          onClick={() => setDocsLimit(prev => prev + 10)}
-                          className="px-6 py-2 bg-primary/10 border border-primary/20 text-primary rounded-full text-[10px] font-black uppercase tracking-[0.2em] hover:bg-primary hover:text-white transition-all shadow-sm active:scale-95 flex items-center gap-2"
-                        >
-                          <Plus className="w-3.5 h-3.5" /> Show More Documents
-                        </button>
-                      )}
-                      
-                      {docsLimit > 5 && (
-                        <button
-                          onClick={() => setDocsLimit(5)}
-                          className="px-6 py-2 bg-slate-100 border border-slate-200 text-slate-500 rounded-full text-[10px] font-black uppercase tracking-[0.2em] hover:bg-slate-200 hover:text-slate-700 transition-all shadow-sm active:scale-95 flex items-center gap-2"
-                        >
-                          Show Less
-                        </button>
-                      )}
-                    </div>
-                  </div>
+                                  {/* Source */}
+                                  <td className="p-2.5 border-r border-slate-200 text-slate-400 text-xs">
+                                    {doc.source || "-"}
+                                  </td>
+
+                                  {/* Date */}
+                                  <td className="p-2.5 border-r border-slate-200 text-slate-400 text-xs">
+                                    {doc.dateOfFiling || "-"}
+                                  </td>
+
+                                  {/* Download — blob download for PDF, open for others */}
+                                  <td className="p-2.5 text-center">
+                                    {isPdf ? (
+                                      <button
+                                        onClick={() => downloadPdf(href, doc.fileName)}
+                                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 ${color} text-white rounded text-xs font-bold transition-all shadow-sm active:scale-95 hover:opacity-90`}
+                                      >
+                                        <Download className="w-3 h-3" />
+                                        {label}
+                                      </button>
+                                    ) : (
+                                      <a
+                                        href={href}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 ${color} text-white rounded text-xs font-bold transition-all shadow-sm active:scale-95`}
+                                      >
+                                        {icon}
+                                        {label}
+                                      </a>
+                                    )}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  />
                 )}
 
               </div>
@@ -1454,31 +1466,7 @@ const IBBICorporateProcess = ({ company }: IBBICorporateProcessProps) => {
               <EmptyTab tab="Public Announcement" />
             ) : (
               <div className="space-y-4">
-                <ProcessTable
-                  section={{
-                    ...publicAnnouncementSection,
-                    rows: publicAnnouncementSection.rows.slice(0, announcementsLimit)
-                  }}
-                />
-                <div className="flex flex-col items-center gap-3 pt-2">
-                  {publicAnnouncementSection.rows.length > announcementsLimit && (
-                    <button
-                      onClick={() => setAnnouncementsLimit(prev => prev + 10)}
-                      className="px-6 py-2 bg-slate-900 border border-slate-900 text-white rounded-full text-[10px] font-black uppercase tracking-[0.2em] hover:bg-slate-800 transition-all shadow-sm active:scale-95 flex items-center gap-2"
-                    >
-                      <Plus className="w-3.5 h-3.5" /> Show More Announcements
-                    </button>
-                  )}
-                  
-                  {announcementsLimit > 5 && (
-                    <button
-                      onClick={() => setAnnouncementsLimit(5)}
-                      className="px-6 py-2 bg-slate-100 border border-slate-200 text-slate-500 rounded-full text-[10px] font-black uppercase tracking-[0.2em] hover:bg-slate-200 hover:text-slate-700 transition-all shadow-sm active:scale-95 flex items-center gap-2"
-                    >
-                      Show Less
-                    </button>
-                  )}
-                </div>
+                <ProcessTable section={publicAnnouncementSection} />
               </div>
             )}
           </div>

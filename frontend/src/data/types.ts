@@ -1,3 +1,5 @@
+export const DEFAULT_LIST_LIMIT = 5;
+
 export interface Company {
   id: string;
   name: string;

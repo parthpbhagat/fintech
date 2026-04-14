@@ -22,6 +22,7 @@ import uvicorn
 from bs4 import BeautifulSoup
 from fastapi import FastAPI, HTTPException, Query, Request
 import base64
+from ibbi_selenium_scraper import scrape_ibbi_claims_with_selenium
 
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse
@@ -71,7 +72,9 @@ ALLOWED_ORIGINS = [
     "http://localhost:5173",
     "http://localhost:8080",
     "http://localhost:8081",
+    "http://127.0.0.1:8080",
     "http://127.0.0.1:8081",
+    "http://127.0.0.1:5173",
 ]
 
 app = FastAPI(title="fintech API")
@@ -91,7 +94,7 @@ async def add_security_headers(request: Request, call_next):
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-    response.headers["Cross-Origin-Resource-Policy"] = "same-site"
+    response.headers["Cross-Origin-Resource-Policy"] = "cross-origin"
     response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
     response.headers["Cache-Control"] = "no-store" if request.url.path.startswith("/auth/") else "public, max-age=60"
     return response
@@ -1777,6 +1780,16 @@ class IBBIDataCache:
                 if result:
                     sections[result[0]] = result[1]
 
+        # Use Selenium to scrape the dynamically rendered claims tables as requested
+        try:
+            print(f"[SELENIUM] Fetching claims process via Selenium for {cleaned_cin}")
+            selenium_data = scrape_ibbi_claims_with_selenium(cleaned_cin)
+            if selenium_data:
+                # Merge the dynamically fetched data
+                sections.update(selenium_data)
+        except Exception as e:
+            print(f"[SELENIUM ERROR] Failed to fetch Selenium claims data: {e}")
+
         return sections
 
     def fetch_ibbi_news(self, company_name: str) -> list[dict[str, str]]:
@@ -2298,7 +2311,7 @@ def list_companies(
 
 @app.get("/company/{id_or_cin}/claims/merged")
 def get_merged_claims(id_or_cin: str) -> list:
-    """Fetches all versions with full summary and detailed claimant tables using a session."""
+    """Fetches all versions with full summary and detailed claimant tables via Selenium."""
     try:
         company = get_company(id_or_cin)
         cin = company.get("cin")
@@ -2307,72 +2320,15 @@ def get_merged_claims(id_or_cin: str) -> list:
 
     if not cin: return []
     
-    session = requests.Session()
-    session.headers.update({
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.9",
-    })
-
-    v_url = f"{IBBI_CLAIMS_VERSION_URL}/{quote(cin)}"
+    from ibbi_selenium_scraper import scrape_all_claims_with_selenium
+    
     try:
-        res = session.get(v_url, timeout=REQUEST_TIMEOUT_SECONDS)
-        res.raise_for_status()
+        # Use our robust selenium scraper to parse the nested tables and PDF links properly
+        merged = scrape_all_claims_with_selenium(cin)
+        return merged
     except Exception as e:
-        print(f"Error fetching versions for {cin}: {e}")
+        print(f"Error fetching deep claims for {cin}: {e}")
         return []
-
-    versions = parse_claim_version_rows(res.text)
-    merged = []
-    for v in versions:
-        d_id = v.get("detail_id")
-        if not d_id: continue
-        d_url = f"{IBBI_CLAIMS_DETAIL_URL}/{quote(d_id)}"
-        try:
-            # 1. Get the detail page to establish session/cookies for this version
-            d_res = session.get(d_url, timeout=REQUEST_TIMEOUT_SECONDS)
-            if d_res.status_code == 200:
-                html = d_res.text
-                summary = parse_claim_summary_table(html)
-                
-                # Perform deep scraping for each category in the summary
-                details = {}
-                for row in summary:
-                    # Clean the category name for matching
-                    cat_name_raw = row.get("category", "")
-                    cat_name = clean_text(cat_name_raw).lower()
-                    
-                    # Match name to IBBI category ID
-                    cat_id = None
-                    for key, mapped_id in CLAIMS_CATEGORY_MAPPINGS.items():
-                        if key in cat_name:
-                            cat_id = mapped_id
-                            break
-                    
-                    if cat_id:
-                        print(f"Deep scraping: {cat_name_raw} (ID: {cat_id}) for version {v.get('version')}...")
-                        # Pass session and referer to bypass 403
-                        claimants = scrape_claim_category_details(session, d_id, cat_id, d_url)
-                        if claimants:
-                            # Use the actual keys from the first row if available
-                            headers = list(claimants[0].keys()) if claimants else []
-                            details[cat_name_raw] = {
-                                "headers": headers,
-                                "rows": claimants
-                            }
-
-                merged.append({
-                    "version": v.get("version"),
-                    "date": v.get("version_date"),
-                    "rp_name": v.get("rp_name"),
-                    "data": parse_claim_detail_inputs(html),
-                    "summaryTable": summary,
-                    "details": details
-                })
-        except Exception as e:
-            print(f"Error merging claim version {v.get('version')}: {e}")
-            continue
-    return merged
 
 
 @app.get("/company/{id_or_cin}")

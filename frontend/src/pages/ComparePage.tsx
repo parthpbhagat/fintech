@@ -5,6 +5,7 @@ import { ArrowLeft, ArrowUpRight, BarChart3, Building2, MapPin, Search } from "l
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { ShowMoreContainer } from "@/components/ShowMoreContainer";
 import DataInsightSheet, { type InsightContent, type InsightSection } from "@/components/DataInsightSheet";
 import { fetchCompanyDirectory, fetchIBBICompanyDetails, searchIBBICompanies } from "@/services/ibbiService";
 import type { Charge, Company, CompanyAddress, CompanyDocument, Director, NewsItem } from "@/data/types";
@@ -33,9 +34,8 @@ const compareFilters = {
   ],
 } as const;
 
-const currencyFormatter = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 });
-const moneyOrNa = (value: number) => {
-  if (!value) return "N/A";
+const moneyOrNa = (value?: number) => {
+  if (value === undefined || value === null || value === 0) return "N/A";
   const cr = value / 10000000;
   return `₹ ${cr.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Cr`;
 };
@@ -48,11 +48,11 @@ type CompareRowConfig = {
 };
 
 const hasMeaningfulText = (value: string) => {
-  const normalized = value.trim().toUpperCase();
+  const normalized = (value || "").trim().toUpperCase();
   return normalized !== "" && normalized !== "N/A" && normalized !== "NA" && normalized !== "0";
 };
 
-const formatCount = (value: number) => String(value || 0);
+const formatCount = (value?: number) => String(value || 0);
 
 const buildJoinedAddress = (company: Company) =>
   [company.registeredAddress, company.businessAddress].filter((value, index, items) => hasMeaningfulText(value || "") && items.indexOf(value) === index).join(" | ") || "N/A";
@@ -85,7 +85,7 @@ const compareRowConfigs: CompareRowConfig[] = [
   {
     label: "Type",
     getValue: (company) => company.type || "",
-    shouldShow: (companies) => companies.some((c) => hasMeaningfulText(c.type || "")),
+    shouldShow: (companies) => companies.some((c) => hasMeaningfulText(c.status || "")),
     description: "Legal entity type such as Private, Public, LLP, or OPC.",
   },
   {
@@ -132,6 +132,21 @@ const compareRowConfigs: CompareRowConfig[] = [
   },
   {
     label: "Authorised Capital",
+    getValue: (company) => moneyOrNa(company.authCap),
+    shouldShow: (companies) => companies.some((company) => (company.authCap || 0) > 0),
+    description: "Authorised share capital captured from registry mirrors.",
+  },
+  {
+    label: "Paid Up Capital",
+    getValue: (company) => moneyOrNa(company.puc),
+    shouldShow: (companies) => companies.some((company) => (company.puc || 0) > 0),
+    description: "Paid up share capital captured from registry mirrors.",
+  },
+  {
+    label: "Last AGM",
+    getValue: (company) => company.lastAGMDate || "N/A",
+    shouldShow: (companies) => companies.some((company) => hasMeaningfulText(company.lastAGMDate || "")),
+    description: "Latest annual general meeting date currently available.",
   },
   {
     label: "Last B/S",
@@ -141,14 +156,14 @@ const compareRowConfigs: CompareRowConfig[] = [
   },
   {
     label: "Directors",
-    getValue: (company) => formatCount(company.directors.length),
-    shouldShow: (companies) => companies.some((company) => company.directors.length > 0),
+    getValue: (company) => formatCount(company.directors?.length),
+    shouldShow: (companies) => companies.some((company) => (company.directors?.length || 0) > 0),
     description: "Total active directors or designated partners mapped from public sources.",
   },
   {
     label: "Charges",
-    getValue: (company) => formatCount(company.charges.length),
-    shouldShow: (companies) => companies.some((company) => company.charges.length > 0),
+    getValue: (company) => formatCount(company.charges?.length),
+    shouldShow: (companies) => companies.some((company) => (company.charges?.length || 0) > 0),
     description: "Total open or satisfied charge entries currently available.",
   },
   {
@@ -196,14 +211,14 @@ const compareRowConfigs: CompareRowConfig[] = [
   },
   {
     label: "Documents",
-    getValue: (company) => formatCount(company.documents.length),
-    shouldShow: (companies) => companies.some((company) => company.documents.length > 0),
+    getValue: (company) => formatCount(company.documents?.length),
+    shouldShow: (companies) => companies.some((company) => (company.documents?.length || 0) > 0),
     description: "Generated and source-linked documents currently available for download/open.",
   },
   {
     label: "Latest Updates",
-    getValue: (company) => formatCount(company.news.length),
-    shouldShow: (companies) => companies.some((company) => company.news.length > 0),
+    getValue: (company) => formatCount(company.news?.length),
+    shouldShow: (companies) => companies.some((company) => (company.news?.length || 0) > 0),
     description: "Latest public news mentions and registry updates currently mapped.",
   },
   {
@@ -233,10 +248,10 @@ const buildCompanyInsight = (company: Company): InsightContent => ({
     { label: "GSTIN", value: company.gstin || "N/A" },
     { label: "Registered Address", value: company.registeredAddress || "N/A" },
     { label: "Business Address", value: company.businessAddress || "N/A" },
-    { label: "Directors", value: formatCount(company.directors.length) },
-    { label: "Charges", value: formatCount(company.charges.length) },
-    { label: "Documents", value: formatCount(company.documents.length) },
-    { label: "Latest Updates", value: formatCount(company.news.length) },
+    { label: "Directors", value: formatCount(company.directors?.length) },
+    { label: "Charges", value: formatCount(company.charges?.length) },
+    { label: "Documents", value: formatCount(company.documents?.length) },
+    { label: "Latest Updates", value: formatCount(company.news?.length) },
   ],
   sections: [
     {
@@ -262,11 +277,11 @@ const buildCompanyInsight = (company: Company): InsightContent => ({
         { label: "Business Address", value: company.businessAddress || "N/A" },
       ],
     },
-    ...(company.directors.length > 0 ? buildDirectorSections(company.directors) : []),
+    ...(company.directors?.length ? buildDirectorSections(company.directors) : []),
     ...(company.addresses?.length ? buildAddressSections(company.addresses) : []),
-    ...(company.charges.length > 0 ? buildChargeSections(company.charges) : []),
-    ...(company.documents.length > 0 ? buildDocumentSections(company.documents) : []),
-    ...(company.news.length > 0 ? buildNewsSections(company.news) : []),
+    ...(company.charges?.length ? buildChargeSections(company.charges) : []),
+    ...(company.documents?.length ? buildDocumentSections(company.documents) : []),
+    ...(company.news?.length ? buildNewsSections(company.news) : []),
   ],
 });
 
@@ -276,17 +291,10 @@ const buildDirectorSections = (directors: Director[]): InsightSection[] =>
     facts: [
       { label: "DIN", value: director.din || "N/A" },
       { label: "Designation", value: director.designation || "N/A" },
-      { label: "Appointment Date", value: director.appointmentDate || "N/A" },
-      { label: "Status", value: director.status || "N/A" },
-      { label: "Directorships", value: director.totalDirectorships || "N/A" },
-      { label: "Disqualified 164", value: director.disqualified164 || "N/A" },
-      { label: "DIN Deactivated", value: director.dinDeactivated || "N/A" },
-      { label: "Email", value: director.contactEmail || "N/A" },
-      { label: "Phone", value: director.contactPhone || "N/A" },
-      { label: "Address", value: director.contactAddress || "N/A" },
-      { label: "Nationality", value: director.nationality || "N/A" },
-      { label: "Occupation", value: director.occupation || "N/A" },
-      { label: "Profile Link", value: director.profileUrl || "N/A" },
+      { label: "Appointment Date", value: director.date_of_appointment || "N/A" },
+      { label: "Status", value: director.is_active ? "Active" : "Inactive" },
+      { label: "Nationality", value: director.din_details?.nationality || "N/A" },
+      { label: "Address", value: director.din_details?.address || "N/A" },
     ],
   }));
 
@@ -358,34 +366,34 @@ const buildRowInsight = (rowLabel: string, description: string, value: string, c
     case "Directors":
       return {
         title: `${rowLabel} - ${company.name}`,
-        subtitle: `${company.directors.length} record(s)`,
+        subtitle: `${company.directors?.length || 0} record(s)`,
         description,
         facts: baseFacts,
-        sections: buildDirectorSections(company.directors),
+        sections: company.directors ? buildDirectorSections(company.directors) : [],
       };
     case "Charges":
       return {
         title: `${rowLabel} - ${company.name}`,
-        subtitle: `${company.charges.length} record(s)`,
+        subtitle: `${company.charges?.length || 0} record(s)`,
         description,
         facts: baseFacts,
-        sections: buildChargeSections(company.charges),
+        sections: company.charges ? buildChargeSections(company.charges) : [],
       };
     case "Documents":
       return {
         title: `${rowLabel} - ${company.name}`,
-        subtitle: `${company.documents.length} record(s)`,
+        subtitle: `${company.documents?.length || 0} record(s)`,
         description,
         facts: baseFacts,
-        sections: buildDocumentSections(company.documents),
+        sections: company.documents ? buildDocumentSections(company.documents) : [],
       };
     case "Latest Updates":
       return {
         title: `${rowLabel} - ${company.name}`,
-        subtitle: `${company.news.length} record(s)`,
+        subtitle: `${company.news?.length || 0} record(s)`,
         description,
         facts: baseFacts,
-        sections: buildNewsSections(company.news),
+        sections: company.news ? buildNewsSections(company.news) : [],
       };
     case "Address":
       return {
@@ -410,33 +418,6 @@ const buildRowInsight = (rowLabel: string, description: string, value: string, c
           { label: "Last AGM", value: company.lastAGMDate || "N/A" },
           { label: "Last B/S", value: company.lastBSDate || "N/A" },
           { label: "Category", value: company.category || "N/A" },
-        ],
-      };
-    case "CIN / LLPIN":
-    case "PAN":
-    case "Registration Number":
-    case "Email":
-    case "Phone":
-    case "Website":
-    case "GSTIN":
-    case "Subcategory":
-    case "Listing Status":
-    case "NIC Code":
-    case "Filing Status":
-    case "Active Compliance":
-      return {
-        title: `${rowLabel} - ${company.name}`,
-        subtitle: value,
-        description,
-        facts: [
-          ...baseFacts,
-          { label: rowLabel, value },
-          { label: "PAN", value: company.pan || "N/A" },
-          { label: "GSTIN", value: company.gstin || "N/A" },
-          { label: "Email", value: company.email || "N/A" },
-          { label: "Phone", value: company.phone || "N/A" },
-          { label: "Website", value: company.website || "N/A" },
-          { label: "Registered Address", value: company.registeredAddress || "N/A" },
         ],
       };
     default:
@@ -747,28 +728,36 @@ const CompanySelectorCard = ({
     </div>
 
     <div className="mt-3 space-y-1.5">
-      {(suggestions.length > 0 ? suggestions : browseCompanies.slice(0, 8)).map((company) => (
-        <button
-          key={`${title}-${company.id}`}
-          type="button"
-          onClick={() => onSelectCompany(company)}
-          className="flex w-full items-start gap-2.5 rounded-lg border border-slate-100 px-3 py-2 text-left hover:border-[#81BC06] hover:bg-[#81BC06]/5"
-        >
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#81BC06]/10 text-xs font-black text-[#81BC06]">
-            {company.name[0]}
+      <ShowMoreContainer
+        items={suggestions.length > 0 ? suggestions : browseCompanies}
+        label="Companies"
+        renderItems={(visibleItems) => (
+          <div className="space-y-1.5">
+            {visibleItems.map((company) => (
+              <button
+                key={`${title}-${company.id}`}
+                type="button"
+                onClick={() => onSelectCompany(company)}
+                className="flex w-full items-start gap-2.5 rounded-lg border border-slate-100 px-3 py-2 text-left hover:border-[#81BC06] hover:bg-[#81BC06]/5"
+              >
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#81BC06]/10 text-xs font-black text-[#81BC06]">
+                  {company.name[0]}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-xs font-black uppercase tracking-wide text-slate-900">{company.name}</p>
+                  <div className="mt-1 flex flex-wrap gap-x-2 gap-y-1 text-[10px] font-medium text-slate-500">
+                    <span className="inline-flex items-center gap-1">
+                      <Building2 className="h-2.5 w-2.5" />
+                      {company.cin || "N/A"}
+                    </span>
+                    <span>{company.status}</span>
+                  </div>
+                </div>
+              </button>
+            ))}
           </div>
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-xs font-black uppercase tracking-wide text-slate-900">{company.name}</p>
-            <div className="mt-1 flex flex-wrap gap-x-2 gap-y-1 text-[10px] font-medium text-slate-500">
-              <span className="inline-flex items-center gap-1">
-                <Building2 className="h-2.5 w-2.5" />
-                {company.cin || "N/A"}
-              </span>
-              <span>{company.status}</span>
-            </div>
-          </div>
-        </button>
-      ))}
+        )}
+      />
     </div>
 
     {selectedCompany && (
