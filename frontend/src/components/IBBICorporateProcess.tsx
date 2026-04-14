@@ -1082,7 +1082,7 @@ const IBBICorporateProcess = ({ company }: IBBICorporateProcessProps) => {
                         <div>
                           {/* Sub Tabs */}
                           <div className="flex border-b border-slate-200 bg-white overflow-x-auto scrollbar-hide">
-                            {[...Object.keys(profData.sections).filter(k => k !== "_scraped_at")].map((tab) => {
+                            {[...Object.keys(profData.sections).filter(k => k !== "_scraped_at" && k !== "AFA Detail")].map((tab) => {
                               const labelMap: Record<string, string> = {
                                 "IP Detail": "IP Details",
                                 "AFA Detail": "AFA History",
