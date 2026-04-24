@@ -116,14 +116,24 @@ const Navbar = () => {
             </Button>
           </div>
         ) : (
-          <Button
-            variant="default"
-            size="sm"
-            onClick={() => setIsAuthDialogOpen(true)}
-            className="h-8 rounded-md bg-primary hover:bg-primary/90 px-5 text-[10px] font-black uppercase tracking-widest text-white shadow-lg shadow-primary/20 transition-all active:scale-95"
-          >
-            Sign In
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setIsAuthDialogOpen(true)}
+              className="h-8 rounded-md px-3 text-[10px] font-bold uppercase tracking-widest text-slate-600 hover:text-primary transition-all"
+            >
+              Sign In
+            </Button>
+            <Button
+              variant="default"
+              size="sm"
+              onClick={() => setIsAuthDialogOpen(true)}
+              className="h-8 rounded-md bg-primary hover:bg-primary/90 px-5 text-[10px] font-black uppercase tracking-widest text-white shadow-lg shadow-primary/20 transition-all active:scale-95"
+            >
+              Join Now
+            </Button>
+          </div>
         )}
       </div>
 

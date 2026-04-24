@@ -12,10 +12,6 @@ import {
   Filter,
   CheckCircle2,
   Plus,
-  User as UserIcon,
-  Landmark,
-  MapPin,
-  BadgeCheck,
   ChevronLeft,
   ArrowRight,
   BarChart2,
@@ -23,7 +19,6 @@ import {
   Info,
   Trash2,
   Link as LinkIcon,
-  ArrowUp,
   LayoutList,
 } from "lucide-react";
 import {
@@ -87,25 +82,27 @@ const prettifyFileName = (fileName: string): string => {
   return spaced.replace(/\b\w/g, (c) => c.toUpperCase());
 };
 
-// ── Force-download a file as blob (handles cross-origin PDFs) ──────────────
-const downloadPdf = async (url: string, fileName: string) => {
-  try {
-    const res = await fetch(url, { mode: "cors" });
-    if (!res.ok) throw new Error("fetch failed");
-    const blob = await res.blob();
-    const blobUrl = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = blobUrl;
-    a.download = fileName;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(blobUrl);
-  } catch {
-    // Fallback: open in new tab if CORS/network blocks direct fetch
-    window.open(url, "_blank", "noreferrer");
-  }
-};
+// ── Reusable View PDF Button ────────────────────────────────────────────────
+const ViewPdfButton = ({
+  href,
+  label = "View PDF",
+  size = "sm",
+}: {
+  href: string;
+  label?: string;
+  size?: "xs" | "sm";
+}) => (
+  <a
+    href={href}
+    target="_blank"
+    rel="noreferrer"
+    className={`inline-flex items-center gap-1.5 px-3 ${size === "xs" ? "py-1 text-[10px]" : "py-1.5 text-xs"
+      } bg-red-600 hover:bg-red-700 text-white rounded-lg font-bold transition-all shadow-sm active:scale-95 whitespace-nowrap`}
+  >
+    <FileText className="w-3.5 h-3.5" />
+    {label}
+  </a>
+);
 
 // ── Detect real file type from fileType field or URL extension ──────────────
 const getFileInfo = (doc: { fileType?: string; url?: string; fileName: string }) => {
@@ -157,14 +154,17 @@ const renderLinkedCell = (header: string, row: CorporateProcessRow) => {
   }
 
   const isPdf = link.toLowerCase().includes(".pdf");
+  if (isPdf) {
+    return <ViewPdfButton href={resolveDocUrl(link)} label={value || "View PDF"} size="xs" />;
+  }
   return (
     <a
       href={resolveDocUrl(link)}
       target="_blank"
       rel="noreferrer"
-      className={`inline-flex items-center gap-1 ${isPdf ? "text-red-600 hover:text-red-700" : "text-blue-600 hover:text-blue-700"} underline`}
+      className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-700 underline"
     >
-      <span>{value || (isPdf ? "PDF" : "Open")}</span>
+      <span>{value || "Open"}</span>
       <ExternalLink className="w-3 h-3" />
     </a>
   );
@@ -239,10 +239,10 @@ const AssignmentAnalyticsSummary = ({ data }: { data: any[] }) => {
   if (!summary) return null;
 
   return (
-    <div className="bg-gradient-to-r from-[#002D62] to-[#004a8f] p-5 rounded-xl text-white shadow-lg mb-6 border-l-4 border-primary">
-      <div className="flex items-start gap-4">
-        <div className="bg-white/10 p-3 rounded-lg flex-shrink-0">
-          <Info className="w-5 h-5 text-primary" />
+    <div className="bg-gradient-to-r from-[#002D62] to-[#004a8f] p-4 rounded-xl text-white shadow-lg mb-3 border-l-4 border-primary">
+      <div className="flex items-start gap-3">
+        <div className="bg-white/10 p-2.5 rounded-lg flex-shrink-0">
+          <Info className="w-4 h-4 text-primary" />
         </div>
         <div className="space-y-1">
           <h5 className="text-[10px] font-black uppercase tracking-[0.2em] text-blue-200/70">Overall Professional Insight</h5>
@@ -258,50 +258,14 @@ const AssignmentAnalyticsSummary = ({ data }: { data: any[] }) => {
   );
 };
 
-// ── Main Component ──────────────────────────────────────────────────────────
-
-// ── Claims Detailed View Components ──────────────────────────────────────────
-
-const ClaimsSubNavigation = ({ versions, onSelect }: { versions: any[], onSelect: (id: string) => void }) => {
-  return (
-    <div className="mb-8">
-      <div className="flex items-center gap-2 mb-4 text-slate-500">
-        <LayoutList className="w-4 h-4" />
-        <span className="text-[10px] font-bold uppercase tracking-widest">Available Claim Versions</span>
-      </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-        {versions.map((v, idx) => (
-          <button
-            key={idx}
-            onClick={() => onSelect(`claim-version-${idx}`)}
-            className="group flex flex-col p-4 bg-slate-50 border border-slate-200 rounded-xl hover:border-primary hover:bg-white hover:shadow-md transition-all text-left"
-          >
-            <div className="flex items-center justify-between mb-2">
-              <span className="px-2 py-0.5 bg-slate-900 text-white text-[9px] font-bold rounded uppercase tracking-tighter">
-                {v.version || `Version ${idx + 1}`}
-              </span>
-              <ArrowRight className="w-3.5 h-3.5 text-slate-300 group-hover:text-primary transition-colors" />
-            </div>
-            <h5 className="text-[11px] font-bold text-slate-800 mb-1">{v.rp_name || "Professional Name N/A"}</h5>
-            <div className="flex items-center gap-1.5 text-[10px] text-slate-400">
-              <span className="font-medium text-slate-500 uppercase">Dated:</span>
-              <span>{v.date || "N/A"}</span>
-            </div>
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-};
+// ── Claims Detailed View with Vertical Tabs ───────────────────────────────────
 
 const ClaimsCategoryTable = ({ category, data }: { category: string, data: { headers: string[], rows: any[] } }) => {
-  const id = `claim-cat-${category.toLowerCase().replace(/[^a-z0-9]/g, "-")}`;
-  
   if (!data?.rows?.length) return null;
 
   return (
-    <div id={id} className="scroll-mt-32 space-y-4 pt-4">
-      <div className="flex items-center justify-between border-b border-primary/20 pb-2">
+    <div className="space-y-3 pt-2">
+      <div className="flex items-center justify-between border-b border-primary/20 pb-1.5">
         <h5 className="text-xs font-black uppercase tracking-[0.15em] text-slate-900 flex items-center gap-2">
           <span className="w-2 h-2 bg-primary rounded-full animate-pulse" />
           {category}
@@ -310,7 +274,7 @@ const ClaimsCategoryTable = ({ category, data }: { category: string, data: { hea
           </span>
         </h5>
       </div>
-      
+
       <ShowMoreContainer
         items={data.rows}
         label={category}
@@ -320,7 +284,7 @@ const ClaimsCategoryTable = ({ category, data }: { category: string, data: { hea
               <thead className="bg-slate-50 border-b border-slate-200">
                 <tr>
                   {data.headers.map((h, i) => (
-                    <th key={i} className="p-2.5 font-bold text-slate-600 border-r border-slate-200 last:border-r-0 whitespace-nowrap">
+                    <th key={i} className="p-2 font-bold text-slate-600 border-r border-slate-200 last:border-r-0 whitespace-nowrap">
                       {h}
                     </th>
                   ))}
@@ -330,7 +294,7 @@ const ClaimsCategoryTable = ({ category, data }: { category: string, data: { hea
                 {visibleRows.map((row, rIdx) => (
                   <tr key={rIdx} className="border-b border-slate-100 last:border-0 hover:bg-primary/5 transition-colors">
                     {data.headers.map((h, cIdx) => (
-                      <td key={cIdx} className="p-2.5 text-slate-700 border-r border-slate-100 last:border-r-0">
+                      <td key={cIdx} className="p-2 text-slate-700 border-r border-slate-100 last:border-r-0">
                         {row[h] || "-"}
                       </td>
                     ))}
@@ -346,167 +310,174 @@ const ClaimsCategoryTable = ({ category, data }: { category: string, data: { hea
 };
 
 const DetailedClaimsView = ({ data }: { data: any[] }) => {
-  const scrollToAnchor = (id: string) => {
-    const el = document.getElementById(id);
-    if (el) {
-      const topOffset = 140;
-      const elementPosition = el.getBoundingClientRect().top;
-      const offsetPosition = elementPosition + window.pageYOffset - topOffset;
-      window.scrollTo({ top: offsetPosition, behavior: "smooth" });
-    }
-  };
+  const [activeVersionIdx, setActiveVersionIdx] = useState(0);
+  const version = data[activeVersionIdx];
 
   return (
-    <div className="space-y-12">
-      <ClaimsSubNavigation
-        versions={data}
-        onSelect={scrollToAnchor}
-      />
-
-      <div className="space-y-20">
-        {data.map((version, vIdx) => (
-          <div
-            key={vIdx}
-            id={`claim-version-${vIdx}`}
-            className="scroll-mt-32 pt-8 border-t border-slate-100 first:border-t-0 first:pt-0"
-          >
-            {/* Version Header */}
-            <div className="flex items-center justify-between mb-6 group">
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 bg-slate-900 text-white rounded-xl flex items-center justify-center font-black text-lg shadow-inner">
-                  {vIdx + 1}
-                </div>
-                <div>
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="text-[10px] font-black uppercase text-primary tracking-[0.2em]">Claim Submission Details</span>
-                    <span className="w-1.5 h-1.5 bg-slate-300 rounded-full" />
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{version.date}</span>
-                  </div>
-                  <h4 className="text-sm font-bold text-slate-900 group-hover:text-slate-900 transition-colors">
-                    {version.version}
-                  </h4>
-                  <p className="text-[11px] text-slate-500 font-medium">Professional: <span className="text-slate-800">{version.rp_name || "N/A"}</span></p>
-                </div>
+    <div className="flex flex-col md:flex-row border border-slate-200 rounded-xl overflow-hidden shadow-sm">
+      {/* ── Left: Vertical Tab Sidebar ── */}
+      <div className="md:w-52 flex-shrink-0 bg-slate-50 border-b md:border-b-0 md:border-r border-slate-200 flex flex-col">
+        <div className="px-3 py-2 border-b border-slate-200 flex items-center gap-2">
+          <LayoutList className="w-3.5 h-3.5 text-slate-400" />
+          <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">Claim Versions</span>
+        </div>
+        <div className="overflow-y-auto max-h-[480px] flex flex-row md:flex-col">
+          {data.map((v, idx) => (
+            <button
+              key={idx}
+              onClick={() => setActiveVersionIdx(idx)}
+              className={`flex-shrink-0 text-left px-3 py-2.5 border-b border-slate-200 last:border-b-0 transition-all ${activeVersionIdx === idx
+                  ? "bg-white border-l-2 border-l-primary text-primary font-black"
+                  : "text-slate-500 hover:bg-white hover:text-slate-800 border-l-2 border-l-transparent"
+                }`}
+            >
+              <div className="text-[10px] font-black uppercase tracking-tight truncate">
+                {v.version || `Version ${idx + 1}`}
               </div>
-              <button
-                onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-bold text-slate-400 hover:text-primary bg-slate-50 hover:bg-white border border-slate-200 rounded-lg transition-all"
-              >
-                <ArrowUp className="w-3 h-3" /> BACK TO TOP
-              </button>
+              {v.date && (
+                <div className={`text-[9px] mt-0.5 truncate ${activeVersionIdx === idx ? "text-primary/70" : "text-slate-400"
+                  }`}>
+                  {v.date}
+                </div>
+              )}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* ── Right: Content Panel ── */}
+      <div className="flex-1 min-w-0 p-3 space-y-4 overflow-x-auto">
+        {version ? (
+          <>
+            {/* Version metadata bar */}
+            <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-slate-100">
+              <div>
+                <span className="text-[9px] font-black uppercase tracking-[0.2em] text-primary">Claim Submission Details</span>
+                <h4 className="text-sm font-bold text-slate-900 mt-0.5">{version.version}</h4>
+                <p className="text-[10px] text-slate-500">
+                  Professional: <span className="text-slate-800 font-medium">{version.rp_name || "N/A"}</span>
+                  {version.date && <span className="ml-2 text-slate-400">· {version.date}</span>}
+                </p>
+              </div>
+              {data.length > 1 && (
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => setActiveVersionIdx(Math.max(0, activeVersionIdx - 1))}
+                    disabled={activeVersionIdx === 0}
+                    className="p-1 rounded hover:bg-slate-100 disabled:opacity-30 transition-colors"
+                  >
+                    <ChevronLeft className="w-4 h-4 text-slate-500" />
+                  </button>
+                  <span className="text-[10px] text-slate-400 font-medium">{activeVersionIdx + 1}/{data.length}</span>
+                  <button
+                    onClick={() => setActiveVersionIdx(Math.min(data.length - 1, activeVersionIdx + 1))}
+                    disabled={activeVersionIdx === data.length - 1}
+                    className="p-1 rounded hover:bg-slate-100 disabled:opacity-30 transition-colors"
+                  >
+                    <ChevronRight className="w-4 h-4 text-slate-500" />
+                  </button>
+                </div>
+              )}
             </div>
 
-            {/* Summary Overview */}
-            <div className="space-y-6">
-              {/* Global Documents */}
-              {version.globalDocs && version.globalDocs.length > 0 && (
-                <div className="mb-4 space-y-2">
-                  <h5 className="text-[10px] font-black uppercase text-slate-500 flex items-center gap-2 tracking-widest border-b border-slate-100 pb-2">
-                    <FileText className="w-3.5 h-3.5" /> Associated Claims Documents
-                  </h5>
-                  <div className="flex flex-wrap gap-2">
-                    {version.globalDocs.map((doc: any, dIdx: number) => (
+            {/* Global Documents */}
+            {version.globalDocs && version.globalDocs.length > 0 && (
+              <div className="space-y-1.5">
+                <h5 className="text-[9px] font-black uppercase text-slate-500 flex items-center gap-1.5 tracking-widest">
+                  <FileText className="w-3 h-3" /> Associated Documents
+                </h5>
+                <div className="flex flex-wrap gap-2">
+                  {version.globalDocs.map((doc: any, dIdx: number) => {
+                    const isPdf = (doc.url || "").toLowerCase().includes(".pdf");
+                    return isPdf ? (
+                      <ViewPdfButton key={dIdx} href={doc.url} label={doc.title || "View PDF"} size="xs" />
+                    ) : (
                       <a
                         key={dIdx}
                         href={doc.url}
                         target="_blank"
                         rel="noreferrer"
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 text-blue-700 hover:bg-blue-600 hover:text-white rounded text-[10px] font-bold transition-colors"
+                        className="inline-flex items-center gap-1 px-3 py-1 bg-blue-50 text-blue-700 hover:bg-blue-600 hover:text-white rounded text-[10px] font-bold transition-colors"
                       >
-                        <Download className="w-3 h-3" />
+                        <ExternalLink className="w-3 h-3" />
                         {doc.title}
                       </a>
-                    ))}
-                  </div>
+                    );
+                  })}
                 </div>
-              )}
-
-              <div className="overflow-x-auto border border-slate-200 rounded-xl shadow-sm bg-white">
-                <table className="w-full text-left border-collapse min-w-[1200px]">
-                  <thead>
-                    <tr className="bg-slate-900 text-white">
-                      <th rowSpan={2} className="p-3 text-[10px] font-bold border-r border-blue-900/50 w-12 text-center uppercase tracking-tighter">Sr. No.</th>
-                      <th rowSpan={2} className="p-3 text-[10px] font-bold border-r border-blue-900/50 min-w-[150px] uppercase tracking-tighter">Category of stakeholders</th>
-                      <th colSpan={2} className="p-2 text-[9px] font-black border-b border-r border-blue-900/50 text-center bg-[#F5B841] text-slate-900 uppercase tracking-[0.1em]">Summary of Claims Received</th>
-                      <th colSpan={2} className="p-2 text-[9px] font-black border-b border-r border-blue-900/50 text-center bg-primary text-white uppercase tracking-[0.1em]">Summary of Claims Admitted</th>
-                      <th rowSpan={2} className="p-3 text-[10px] font-bold border-r border-blue-900/50 text-center uppercase tracking-tighter max-w-[90px]">Amount of contingent claims</th>
-                      <th rowSpan={2} className="p-3 text-[10px] font-bold border-r border-blue-900/50 text-center uppercase tracking-tighter max-w-[90px]">Amount of claims rejected</th>
-                      <th rowSpan={2} className="p-3 text-[10px] font-bold border-r border-blue-900/50 text-center uppercase tracking-tighter max-w-[90px]">Amount of Claims under Verification</th>
-                      <th rowSpan={2} className="p-3 text-[10px] font-bold border-r border-blue-900/50 text-center uppercase tracking-tighter min-w-[100px]">Details in Annexure</th>
-                      <th rowSpan={2} className="p-3 text-[10px] font-bold uppercase tracking-tighter min-w-[100px]">Remarks, if any</th>
-                    </tr>
-                    <tr className="bg-slate-50 text-slate-600 text-[9px] font-bold uppercase tracking-tight">
-                      <th className="p-2 text-center border-r border-b border-slate-200">No. of Claims</th>
-                      <th className="p-2 text-center border-r border-b border-slate-200">Amount (Rs.)</th>
-                      <th className="p-2 text-center border-r border-b border-slate-200">No. of Claims</th>
-                      <th className="p-2 text-center border-r border-b border-slate-200">Amount Admitted</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {version.summaryTable && version.summaryTable.length > 0 ? (
-                      version.summaryTable.map((row: any, rIdx: number) => {
-                        const isTotal = row.category?.toLowerCase().includes("total");
-
-                        return (
-                          <tr
-                            key={rIdx}
-                            className={`
-                              border-b border-slate-100 last:border-0 transition-colors
-                              ${isTotal ? "bg-slate-100 font-bold text-slate-900 border-t-2 border-slate-300" : "text-slate-700 hover:bg-slate-50"}
-                            `}
-                          >
-                            <td className="p-2.5 text-center border-r border-slate-100 text-[10px]">{row.srNo}</td>
-                            <td className="p-2.5 border-r border-slate-100 font-medium text-[11px] whitespace-pre-wrap">{row.category}</td>
-                            <td className="p-2.5 text-center border-r border-slate-100 text-[11px] bg-slate-50/50">{row.receivedCount || "0"}</td>
-                            <td className="p-2.5 text-right border-r border-slate-100 px-4 text-[11px] tabular-nums bg-slate-50/50">{row.receivedAmount || "0"}</td>
-                            <td className="p-2.5 text-center border-r border-slate-100 text-[11px] font-bold text-primary">{row.admittedCount || "0"}</td>
-                            <td className="p-2.5 text-right border-r border-slate-100 px-4 text-[11px] tabular-nums font-bold text-primary">{row.admittedAmount || "0"}</td>
-                            <td className="p-2.5 text-right border-r border-slate-100 px-3 text-[10px] tabular-nums">{row.contingentAmount || "0"}</td>
-                            <td className="p-2.5 text-right border-r border-slate-100 px-3 text-[10px] tabular-nums text-red-600 font-medium">{row.rejectedAmount || "0"}</td>
-                            <td className="p-2.5 text-right border-r border-slate-100 px-3 text-[10px] tabular-nums text-amber-600 font-medium">{row.underVerificationAmount || "0"}</td>
-                            <td className="p-2.5 text-center border-r border-slate-100 text-[10px]">
-                              {row.documentLink ? (
-                                <a
-                                  href={row.documentLink}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="inline-flex items-center gap-1 px-3 py-1.5 bg-red-50 text-red-700 hover:bg-red-600 hover:text-white rounded transition-colors font-bold whitespace-nowrap shadow-sm"
-                                >
-                                  <FileText className="w-3 h-3" /> View PDF
-                                </a>
-                              ) : (
-                                <span className="text-slate-300">-</span>
-                              )}
-                            </td>
-                            <td className="p-2.5 text-[10px] text-slate-500 max-w-[150px] truncate" title={row.remarks || ""}>
-                              {row.remarks || ""}
-                            </td>
-                          </tr>
-                        );
-                      })
-                    ) : (
-                      <tr>
-                        <td colSpan={11} className="p-8 text-center text-slate-400 italic text-xs">
-                          No summary data found.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
               </div>
-            </div>
+            )}
 
-            {/* Quick footer link */}
-            <div className="mt-8 flex justify-end">
-              <button
-                onClick={() => scrollToAnchor("main-claims-nav")}
-                className="text-[9px] font-black text-slate-300 hover:text-primary uppercase tracking-widest transition-all flex items-center gap-1.5"
-              >
-                <LayoutList className="w-3 h-3" /> Back to Summary
-              </button>
+            {/* Summary Table */}
+            <div className="overflow-x-auto border border-slate-200 rounded-xl shadow-sm bg-white">
+              <table className="w-full text-left border-collapse min-w-[1100px]">
+                <thead>
+                  <tr className="bg-slate-900 text-white">
+                    <th rowSpan={2} className="p-2.5 text-[10px] font-bold border-r border-blue-900/50 w-10 text-center uppercase tracking-tighter">Sr.</th>
+                    <th rowSpan={2} className="p-2.5 text-[10px] font-bold border-r border-blue-900/50 min-w-[140px] uppercase tracking-tighter">Category of stakeholders</th>
+                    <th colSpan={2} className="p-2 text-[9px] font-black border-b border-r border-blue-900/50 text-center bg-[#F5B841] text-slate-900 uppercase tracking-[0.1em]">Claims Received</th>
+                    <th colSpan={2} className="p-2 text-[9px] font-black border-b border-r border-blue-900/50 text-center bg-primary text-white uppercase tracking-[0.1em]">Claims Admitted</th>
+                    <th rowSpan={2} className="p-2.5 text-[10px] font-bold border-r border-blue-900/50 text-center uppercase tracking-tighter max-w-[80px]">Contingent</th>
+                    <th rowSpan={2} className="p-2.5 text-[10px] font-bold border-r border-blue-900/50 text-center uppercase tracking-tighter max-w-[80px]">Rejected</th>
+                    <th rowSpan={2} className="p-2.5 text-[10px] font-bold border-r border-blue-900/50 text-center uppercase tracking-tighter max-w-[80px]">Under Verification</th>
+                    <th rowSpan={2} className="p-2.5 text-[10px] font-bold border-r border-blue-900/50 text-center uppercase tracking-tighter min-w-[90px]">Annexure</th>
+                    <th rowSpan={2} className="p-2.5 text-[10px] font-bold uppercase tracking-tighter min-w-[90px]">Remarks</th>
+                  </tr>
+                  <tr className="bg-slate-50 text-slate-600 text-[9px] font-bold uppercase tracking-tight">
+                    <th className="p-2 text-center border-r border-b border-slate-200">Count</th>
+                    <th className="p-2 text-center border-r border-b border-slate-200">Amount (Rs.)</th>
+                    <th className="p-2 text-center border-r border-b border-slate-200">Count</th>
+                    <th className="p-2 text-center border-r border-b border-slate-200">Amount</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {version.summaryTable && version.summaryTable.length > 0 ? (
+                    version.summaryTable.map((row: any, rIdx: number) => {
+                      const isTotal = row.category?.toLowerCase().includes("total");
+                      return (
+                        <tr
+                          key={rIdx}
+                          className={`border-b border-slate-100 last:border-0 transition-colors ${isTotal
+                              ? "bg-slate-100 font-bold text-slate-900 border-t-2 border-slate-300"
+                              : "text-slate-700 hover:bg-slate-50"
+                            }`}
+                        >
+                          <td className="p-2 text-center border-r border-slate-100 text-[10px]">{row.srNo}</td>
+                          <td className="p-2 border-r border-slate-100 font-medium text-[11px] whitespace-pre-wrap">{row.category}</td>
+                          <td className="p-2 text-center border-r border-slate-100 text-[11px] bg-slate-50/50">{row.receivedCount || "0"}</td>
+                          <td className="p-2 text-right border-r border-slate-100 px-3 text-[11px] tabular-nums bg-slate-50/50">{row.receivedAmount || "0"}</td>
+                          <td className="p-2 text-center border-r border-slate-100 text-[11px] font-bold text-primary">{row.admittedCount || "0"}</td>
+                          <td className="p-2 text-right border-r border-slate-100 px-3 text-[11px] tabular-nums font-bold text-primary">{row.admittedAmount || "0"}</td>
+                          <td className="p-2 text-right border-r border-slate-100 px-2 text-[10px] tabular-nums">{row.contingentAmount || "0"}</td>
+                          <td className="p-2 text-right border-r border-slate-100 px-2 text-[10px] tabular-nums text-red-600 font-medium">{row.rejectedAmount || "0"}</td>
+                          <td className="p-2 text-right border-r border-slate-100 px-2 text-[10px] tabular-nums text-amber-600 font-medium">{row.underVerificationAmount || "0"}</td>
+                          <td className="p-2 text-center border-r border-slate-100 text-[10px]">
+                            {row.documentLink ? (
+                              <ViewPdfButton href={row.documentLink} label="View PDF" size="xs" />
+                            ) : (
+                              <span className="text-slate-300">-</span>
+                            )}
+                          </td>
+                          <td className="p-2 text-[10px] text-slate-500 max-w-[120px] truncate" title={row.remarks || ""}>
+                            {row.remarks || ""}
+                          </td>
+                        </tr>
+                      );
+                    })
+                  ) : (
+                    <tr>
+                      <td colSpan={11} className="p-6 text-center text-slate-400 italic text-xs">
+                        No summary data found.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
             </div>
-          </div>
-        ))}
+          </>
+        ) : (
+          <div className="py-12 text-center text-slate-400 italic text-xs">Select a version to view details.</div>
+        )}
       </div>
     </div>
   );
@@ -872,7 +843,7 @@ const IBBICorporateProcess = ({ company }: IBBICorporateProcessProps) => {
     <div className="w-full bg-white font-sans text-sm mb-6 border border-slate-200 rounded-xl shadow-sm">
 
       {/* ── Banner ── */}
-      <div className="bg-primary text-white px-6 py-4 relative overflow-hidden rounded-t-xl">
+      <div className="bg-primary text-white px-5 py-3 relative overflow-hidden rounded-t-xl">
         <div className="absolute inset-0 opacity-15 pointer-events-none">
           <svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
             <path d="M-50,80 Q150,10 400,60 T900,30" stroke="white" strokeWidth="1.5" fill="none" />
@@ -960,7 +931,7 @@ const IBBICorporateProcess = ({ company }: IBBICorporateProcessProps) => {
       </div>
 
       {/* ── All Sections (Sequential Rendering for Scrolling) ── */}
-      <div className="p-4 space-y-8">
+      <div className="p-3 space-y-5">
 
         {/* ── SECTION: Details About CD ── */}
         <section
@@ -1113,7 +1084,7 @@ const IBBICorporateProcess = ({ company }: IBBICorporateProcessProps) => {
                           </div>
 
                           {/* Tab Content */}
-                          <div className="p-3 min-h-[300px]">
+                          <div className="p-2 min-h-[240px]">
                             {(() => {
                               const sections = profData.sections?.[activeProfTab];
                               if (!sections || (Array.isArray(sections) && sections.length === 0)) {
@@ -1292,7 +1263,7 @@ const IBBICorporateProcess = ({ company }: IBBICorporateProcessProps) => {
 
             {/* Documents – Category Filter + Table */}
             {(isLoading || allDocs.length > 0) && (
-              <div>
+              <div className="mt-1">
                 {/* Section Header */}
                 <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
                   <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
@@ -1366,7 +1337,7 @@ const IBBICorporateProcess = ({ company }: IBBICorporateProcessProps) => {
                               <th className="p-2.5 font-bold border-r border-slate-300 text-slate-600 w-[44%]">File Name</th>
                               <th className="p-2.5 font-bold border-r border-slate-300 text-slate-600">Source</th>
                               <th className="p-2.5 font-bold border-r border-slate-300 text-slate-600">Date</th>
-                              <th className="p-2.5 font-bold text-slate-600 text-center w-28">Download</th>
+                              <th className="p-2.5 font-bold text-slate-600 text-center w-28">View</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -1412,16 +1383,10 @@ const IBBICorporateProcess = ({ company }: IBBICorporateProcessProps) => {
                                     {doc.dateOfFiling || "-"}
                                   </td>
 
-                                  {/* Download — blob download for PDF, open for others */}
+                                  {/* View — open in new tab for all file types */}
                                   <td className="p-2.5 text-center">
                                     {isPdf ? (
-                                      <button
-                                        onClick={() => downloadPdf(href, doc.fileName)}
-                                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 ${color} text-white rounded text-xs font-bold transition-all shadow-sm active:scale-95 hover:opacity-90`}
-                                      >
-                                        <Download className="w-3 h-3" />
-                                        {label}
-                                      </button>
+                                      <ViewPdfButton href={href} label="View PDF" size="xs" />
                                     ) : (
                                       <a
                                         href={href}
@@ -1454,7 +1419,7 @@ const IBBICorporateProcess = ({ company }: IBBICorporateProcessProps) => {
         <section
           id="Public Announcement"
           ref={(el) => (sectionRefs.current["Public Announcement"] = el)}
-          className="scroll-mt-24 pt-6 border-t border-slate-100"
+          className="scroll-mt-24 pt-4 border-t border-slate-100"
         >
           <div>
             <h3 className="text-base font-bold text-slate-900 mb-1 border-l-4 border-primary pl-3 uppercase tracking-tight">Announcement History</h3>
@@ -1476,7 +1441,7 @@ const IBBICorporateProcess = ({ company }: IBBICorporateProcessProps) => {
         <section
           id="Claims"
           ref={(el) => (sectionRefs.current["Claims"] = el)}
-          className="scroll-mt-24 pt-8 border-t border-slate-100"
+          className="scroll-mt-24 pt-4 border-t border-slate-100"
         >
           <div className="space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -1623,7 +1588,7 @@ const IBBICorporateProcess = ({ company }: IBBICorporateProcessProps) => {
         <section
           id="Invitation for Resolution Plan"
           ref={(el) => (sectionRefs.current["Invitation for Resolution Plan"] = el)}
-          className="scroll-mt-24 pt-8 border-t border-slate-100"
+          className="scroll-mt-24 pt-4 border-t border-slate-100"
         >
           <div>
             <h3 className="text-base font-bold text-slate-900 mb-2 border-l-4 border-primary pl-3 uppercase tracking-tight">Resolution Plan Invitation</h3>
@@ -1643,7 +1608,7 @@ const IBBICorporateProcess = ({ company }: IBBICorporateProcessProps) => {
         <section
           id="Orders"
           ref={(el) => (sectionRefs.current["Orders"] = el)}
-          className="scroll-mt-24 pt-8 border-t border-slate-100"
+          className="scroll-mt-24 pt-4 border-t border-slate-100"
         >
           <div>
             <h3 className="text-base font-bold text-slate-900 mb-2 border-l-4 border-primary pl-3 uppercase tracking-tight">Related Orders</h3>
@@ -1663,7 +1628,7 @@ const IBBICorporateProcess = ({ company }: IBBICorporateProcessProps) => {
         <section
           id="Auction Notice"
           ref={(el) => (sectionRefs.current["Auction Notice"] = el)}
-          className="scroll-mt-24 pt-8 border-t border-slate-100"
+          className="scroll-mt-24 pt-4 border-t border-slate-100"
         >
           <div>
             <h3 className="text-base font-bold text-slate-900 mb-2 border-l-4 border-primary pl-3 uppercase tracking-tight">Auction Notices</h3>

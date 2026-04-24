@@ -342,19 +342,19 @@ const Index = () => {
   return (
     <div className="bg-white font-sans">
 
-      <section className="relative py-16 md:py-24 flex flex-col items-center justify-center bg-[#F8FAFC] overflow-hidden">
-        <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(circle_at_30%_20%,#81BC0615_0%,transparent_40%),radial-gradient(circle_at_70%_60%,#1f8bff10_0%,transparent_40%)]" />
+      <section className="relative py-16 md:py-24 flex flex-col items-center justify-center bg-[#f7fee7] overflow-hidden">
+        <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(circle_at_30%_20%,#81BC0620_0%,transparent_40%),radial-gradient(circle_at_70%_60%,#4a6b0315_0%,transparent_40%)]" />
 
         <div className="mb-8 text-center relative z-10 px-4">
-          <div className="inline-flex items-center gap-2 rounded-full bg-[#81BC06]/10 px-4 py-1.5 text-[10px] font-black uppercase tracking-[0.2em] text-[#81BC06] mb-6">
+          <div className="inline-flex items-center gap-2 rounded-full bg-[#81BC06]/10 px-4 py-1.5 text-[10px] font-black uppercase tracking-[0.2em] text-[#4a6b03] mb-6">
             <Sparkles className="h-3 w-3" />
             Empowering Modern Fintech Analysis
           </div>
           <h1 className="mt-2 text-4xl md:text-5xl font-black tracking-tight text-slate-900 leading-[1.1]">
             Intelligent Corporate <br />
-            <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#81BC06] to-[#A3D93F]">Insights & Analytics</span>
+            <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#1E3A00] to-[#81BC06]">Insights & Analytics</span>
           </h1>
-          <p className="mt-6 max-w-2xl text-base md:text-lg text-slate-500 font-medium">
+          <p className="mt-6 max-w-2xl text-base md:text-lg text-slate-600 font-medium">
             Live IBBI registry analysis and risk assessment tools for smarter business decisions.
           </p>
         </div>
@@ -371,14 +371,14 @@ const Index = () => {
               <button
                 type="button"
                 onClick={() => setShowSearchModeMenu((value) => !value)}
-                className="bg-[#F8F9FA] w-full md:w-[170px] px-5 py-3 border-b md:border-b-0 md:border-r border-slate-200 text-slate-500 flex items-center justify-between gap-2 font-bold text-xs uppercase"
+                className="bg-[#f1fadb] w-full md:w-[170px] px-5 py-3 border-b md:border-b-0 md:border-r border-slate-200 text-[#1E3A00] flex items-center justify-between gap-2 font-bold text-xs uppercase hover:bg-[#e4f2c5] transition-colors"
               >
                 {selectedSearchMode.shortLabel}
                 <ChevronDown className={`w-4 h-4 transition-transform ${showSearchModeMenu ? "rotate-180" : ""}`} />
               </button>
 
               {showSearchModeMenu && (
-                <div className="absolute left-0 top-full z-30 mt-1 w-full overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl">
+                <div className="absolute left-0 top-full z-30 mt-1 w-full overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl animate-in fade-in zoom-in duration-200">
                   {searchModes.map((mode) => (
                     <button
                       key={mode.id}
@@ -388,8 +388,8 @@ const Index = () => {
                         setShowSearchModeMenu(false);
                       }}
                       className={`flex w-full items-center px-4 py-3 text-left text-sm font-semibold uppercase tracking-wide transition-colors ${selectedSearchMode.id === mode.id
-                        ? "bg-[#1f8bff] text-white"
-                        : "text-slate-600 hover:bg-slate-50"
+                        ? "bg-[#1E3A00] text-white"
+                        : "text-slate-600 hover:bg-[#f7fee7]"
                         }`}
                     >
                       {mode.label}
@@ -434,7 +434,7 @@ const Index = () => {
                         type="button"
                         onMouseDown={(event) => event.preventDefault()}
                         onClick={() => selectSuggestion(company)}
-                        className="flex w-full items-start gap-3 border-b border-slate-100 px-4 py-3 text-left last:border-b-0 hover:bg-[#1f8bff] hover:text-white group"
+                        className="flex w-full items-start gap-3 border-b border-slate-100 px-4 py-3 text-left last:border-b-0 hover:bg-[#81BC06] hover:text-white group"
                       >
                         <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-black text-slate-500 group-hover:bg-white/20 group-hover:text-white">
                           {company.name[0]}
@@ -454,14 +454,14 @@ const Index = () => {
 
             <button
               type="submit"
-              className="bg-[#81BC06] text-white px-6 py-3 font-bold uppercase text-xs hover:bg-[#6ea105] transition-colors"
+              className="bg-[#81BC06] text-white px-6 py-3 font-bold uppercase text-xs hover:bg-[#1E3A00] transition-colors"
             >
               {isLoading ? "Searching..." : "Search"}
             </button>
             <button
               type="button"
               onClick={runLiveSearch}
-              className="bg-[#2D333F] text-white px-5 py-3 font-bold uppercase text-[11px] flex items-center justify-center gap-1.5 min-w-max rounded-b-lg md:rounded-b-none md:rounded-r-lg"
+              className="bg-[#1E3A00] text-white px-5 py-3 font-bold uppercase text-[11px] flex items-center justify-center gap-1.5 min-w-max rounded-b-lg md:rounded-b-none md:rounded-r-lg hover:bg-[#2D4F00] transition-colors"
             >
               <Search className="w-3.5 h-3.5" /> Live IBBI
             </button>
@@ -474,7 +474,7 @@ const Index = () => {
             <Link
               key={company.id}
               to={`/company/${company.id}`}
-              className="px-3 py-1 bg-white border border-slate-200 rounded-full text-[10px] text-blue-600 font-medium hover:underline hover:text-blue-800 hover:border-blue-300 cursor-pointer transition-colors shadow-sm"
+              className="px-3 py-1 bg-white border border-slate-200 rounded-full text-[10px] text-[#4a6b03] font-medium hover:underline hover:text-[#1E3A00] hover:border-[#81BC06] cursor-pointer transition-colors shadow-sm"
             >
               {company.name}
             </Link>
@@ -637,7 +637,8 @@ const Index = () => {
               {/* Address Section - Replace the text below with your actual address */}
               <div className="mt-4 text-slate-600 text-xs md:text-sm">
                 <p className="font-bold text-slate-800">Our Address:</p>
-                <p>Fintech Soluction Pvt Ltd, Office No 1815,</p>
+                <p>Finanvo Soluction Private Limited</p>
+                <p>1815, BLOCK-B, NAVRATNA CORPORATE PARK</p>
                 <p>Ambali Bopal Road, Ahemdabad, gujrat - 380058</p>
                 <p className="mt-2">Email: fintechpvtltd@gmail.com </p>
               </div>

@@ -46,7 +46,7 @@ IBBI_CLAIMS_RP_PROCESS_URL = "https://ibbi.gov.in/claims/rpProcess"
 IBBI_CLAIMS_ORDER_PROCESS_URL = "https://ibbi.gov.in/claims/orderProcess"
 IBBI_CLAIMS_AUCTION_NOTICE_PROCESS_URL = "https://ibbi.gov.in/claims/auctionNoticeProcess"
 IBBI_PRESS_RELEASES_URL = "https://ibbi.gov.in/media/press-releases"
-IBBI_IP_REGISTER_URL = "https://ibbi.gov.in/ips-register/view-ip/1"
+IBBI_IP_REGISTER_URL = "https://ibbi.gov.in/en/ips-register/view-ip/1"
 IBBI_IP_DETAILS_URL = "https://ibbi.gov.in/insolvency-professional/details"
 
 # ── Claims Category Mapping for Deep Scraping (IBBI Form Mapping) ─────────────
@@ -2078,6 +2078,51 @@ class IBBIDataCache:
 
 
 
+    def scrape_insolvency_professionals(self) -> list[dict[str, Any]]:
+        """Scrapes the entire Insolvency Professionals register from IBBI."""
+        print("[SCRAPE] Starting Insolvency Professionals registry scrape...")
+        all_professionals = []
+        try:
+            # We'll scrape the first few pages as a batch
+            for page in range(1, 6): # Scraping first 5 pages (approx 250 IPs)
+                url = f"https://ibbi.gov.in/en/ips-register/view-ip/{page}"
+                print(f"  Scraping page {page}: {url}")
+                resp = self._session.get(url, timeout=30)
+                if resp.status_code != 200: break
+                
+                soup = BeautifulSoup(resp.text, "html.parser")
+                table = soup.find("table")
+                if not table: break
+                
+                rows = table.find_all("tr")[1:] # Skip header
+                for tr in rows:
+                    cells = tr.find_all("td")
+                    if len(cells) < 4: continue
+                    
+                    reg_no = clean_text(cells[1].get_text(strip=True))
+                    name = clean_text(cells[2].get_text(strip=True))
+                    email = clean_text(cells[3].get_text(strip=True))
+                    
+                    all_professionals.append({
+                        "id": reg_no or slugify(name),
+                        "registration_no": reg_no,
+                        "name": name,
+                        "email": email,
+                        "status": "Registered",
+                        "synced_at": utc_now_iso()
+                    })
+            
+            if all_professionals:
+                print(f"[DB] Saving {len(all_professionals)} professionals to database.")
+                db_module.upsert_professionals(all_professionals)
+                
+            return all_professionals
+        except Exception as e:
+            print(f"[SCRAPE ERROR] Professionals scrape failed: {e}")
+            return []
+
+
+
     def search_claim_process(self, query: str, limit: int = 12) -> list[dict[str, str]]:
         print(f"[API FETCH] Searching IBBI claims registry for query: {query}")
         response = self._session.get(
@@ -2320,11 +2365,26 @@ def get_merged_claims(id_or_cin: str) -> list:
 
     if not cin: return []
     
+    # ── Try Database Cache First ─────
+    try:
+        db_claims = db_module.get_company_claims(cin)
+        if db_claims:
+            print(f"[CACHE] Returning claims from TiDB Cloud for {cin}")
+            return db_claims
+    except Exception as e:
+        print(f"[DB] Error fetching claims cache: {e}")
+
     from ibbi_selenium_scraper import scrape_all_claims_with_selenium
     
     try:
         # Use our robust selenium scraper to parse the nested tables and PDF links properly
+        print(f"[SCRAPE] Fetching claims via Selenium for {cin} (first-time/not-in-db)")
         merged = scrape_all_claims_with_selenium(cin)
+        
+        # ── Save to Database for next time ─────
+        if merged:
+            db_module.upsert_claims(cin, merged)
+            
         return merged
     except Exception as e:
         print(f"Error fetching deep claims for {cin}: {e}")
@@ -2333,20 +2393,25 @@ def get_merged_claims(id_or_cin: str) -> list:
 
 @app.get("/company/{id_or_cin}")
 def get_company(id_or_cin: str, fresh: bool = Query(default=False)) -> dict[str, Any]:
-    # ── Try MySQL DB first (enriched profile) ─────────────────────
+    # 1. Try MySQL DB First (Fastest)
     if not fresh:
         try:
             db_detail = db_module.get_company_detail(id_or_cin)
             if db_detail:
                 return db_detail
         except Exception as e:
-            print(f"[DB] get_company_detail error: {e}")
+            print(f"[DATABASE DOWN] Falling back to Live Scraping: {e}")
+
+    # 2. Database missing or down? Trigger Live Enrichment
     companies, _, _ = cache.get_snapshot(force=fresh)
     target = clean_text(id_or_cin).upper()
-
+    
     for company in companies:
         if company["id"].upper() == target or company["cin"].upper() == target or slugify(company["name"]).upper() == target:
-            return cache.enrich_company_profile(attach_company_source_metadata(company), force=fresh, background=(not fresh))
+            # If DB is down, this force=True will ensure Selenium/Live scraping runs
+            return cache.enrich_company_profile(attach_company_source_metadata(company), force=True)
+
+    raise HTTPException(status_code=404, detail="Company not found")
 
     public_company = cache.fetch_public_announcement_company(id_or_cin)
     if public_company:
@@ -2379,6 +2444,36 @@ def download_company_summary_text(id_or_cin: str) -> PlainTextResponse:
         build_company_summary_text(company),
         headers={"Content-Disposition": f'attachment; filename="{safe_name}"'},
     )
+
+
+@app.post("/admin/sync/professionals")
+async def sync_professionals():
+    """Trigger background professional scraping."""
+    import threading
+    threading.Thread(target=cache.scrape_insolvency_professionals, daemon=True).start()
+    return {"message": "Professional scraping started in background"}
+
+
+@app.post("/admin/sync/claims")
+async def sync_all_claims():
+    """Trigger background claims scraping for all active companies."""
+    def _bulk_claims():
+        companies, _, _ in cache.get_snapshot()
+        from ibbi_selenium_scraper import scrape_all_claims_with_selenium
+        for company in companies[:20]: # Limit to top 20 for safety
+            cin = company.get("cin")
+            if cin and cin != "N/A":
+                try:
+                    print(f"[BULK CLAIMS] Scraping {cin}...")
+                    claims = scrape_all_claims_with_selenium(cin)
+                    if claims:
+                        db_module.upsert_claims(cin, claims)
+                except Exception as e:
+                    print(f"Error bulk scraping claims for {cin}: {e}")
+                    
+    import threading
+    threading.Thread(target=_bulk_claims, daemon=True).start()
+    return {"message": "Bulk claims scraping started for top 20 companies"}
 
 
 @app.get("/sources")
@@ -2673,7 +2768,13 @@ def get_professional_details(name: str):
     Search for a professional by name and scrape their full profile from IBBI.
     """
     try:
-        # 0. Check Cache
+        # 0. Check Database Cache
+        db_prof = db_module.get_professional(name)
+        if db_prof:
+            print(f"[CACHE] Returning professional profile from TiDB Cloud for {name}")
+            return db_prof
+            
+        # 1. Check Local JSON Cache (fallback)
         cached = get_cached_profile(name)
         if cached:
             return cached
@@ -2729,8 +2830,12 @@ def get_professional_details(name: str):
             "sections": details
         }
         
-        # 4. Save to Cache
+        # 4. Save to Cache (JSON and TiDB Cloud)
         save_profile_cache(name, response_data)
+        try:
+            db_module.upsert_professionals([response_data])
+        except Exception as e:
+            print(f"[DB] Error saving professional to TiDB: {e}")
         
         return response_data
         

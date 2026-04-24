@@ -44,6 +44,7 @@ import requests as _requests
 from fastapi import APIRouter, Header, HTTPException, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel
+import db as db_module
 
 # ─── Config ─────────────────────────────────────────────────────────────────
 
@@ -342,7 +343,7 @@ def _create_user(
                VALUES (?,?,?,?,?,?,?,?,?)""",
             (email, name, phone_number, ph, provider, google_id, avatar_url, verified, now),
         )
-        return {
+        res = {
             "id": cur.lastrowid,
             "email": email,
             "name": name,
@@ -350,7 +351,14 @@ def _create_user(
             "provider": provider,
             "avatar_url": avatar_url,
             "is_verified": verified,
+            "created_at": now
         }
+        # Also sync to TiDB Cloud for central tracking
+        try:
+            db_module.upsert_user(res)
+        except Exception as e:
+            print(f"[DB] Error syncing user to TiDB: {e}")
+        return res
 
 
 def _public_user(user: dict) -> dict:
@@ -545,6 +553,13 @@ def verify_otp(body: VerifyOTPRequest, request: Request) -> JSONResponse:
         user["is_verified"] = 1
 
     token = _create_token({"sub": email, "user_id": user["id"]})
+    
+    # Log the login event in TiDB Cloud
+    try:
+        db_module.log_user_login(email, _client_ip(request))
+    except Exception as e:
+        print(f"[DB] Error logging login to TiDB: {e}")
+
     return JSONResponse(
         content={
             "token": token,
